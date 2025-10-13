@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='utf-8'?>
+<data><header><name>name</name><age>age</age><city>city</city></header><row><name>Alice</name><age>25</age><city>New York</city></row><row><name>Bob</name><age>30</age><city>Los Angeles</city></row><row><name>Charlie</name><age>35</age><city>Chicago</city></row></data>
