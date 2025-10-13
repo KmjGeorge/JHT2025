@@ -134,14 +134,15 @@ class PDW:
         self.Tag_Nums = Tag_Nums
         self.Tag_SampleRates = Tag_SampleRates
         self.PWdots = PWdots
-        self.TOAdots = TOAdots
+        self.PWs = PWdots / Tag_SampleRates  # dot -> us
+        self.TOAdots = TOAdots / 1e3   # ns - > us
         self.IntraPulse = IntraPulse
 
     #  获取数据范围
     def get_data_range(self):
         result = {'freq': [self.Freqs.max(), self.Freqs.min()],
                   'pa': [self.PAs.max(), self.PAs.min()],
-                  'pw': [self.PWdots.max(), self.PWdots.min()],
+                  'pw': [self.PWs.max(), self.PWs.min()],
                   'toa': [self.TOAdots.max(), self.TOAdots.min()],
                   'center_freq': self.Tag_CenterFreqs,
                   }
@@ -206,6 +207,7 @@ def read_pdw(path):
         except:
             pdw = PDW(Freqs, PAs, Labels, Indexs, Tag_CenterFreqs, Tag_Nums, Tag_SampleRates, PWdots, TOAdots)
         return pdw
+
 
 def read_pdw_from_interleaved(path):
     with h5py.File(path, 'r') as f:
