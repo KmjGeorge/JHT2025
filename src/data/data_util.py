@@ -138,6 +138,8 @@ class PDW:
         self.TOAdots = TOAdots / 1e3   # ns - > us
         self.IntraPulse = IntraPulse
 
+    def __len__(self):
+        return len(self.TOAdots)
     #  获取数据范围
     def get_data_range(self):
         result = {'freq': [self.Freqs.max(), self.Freqs.min()],

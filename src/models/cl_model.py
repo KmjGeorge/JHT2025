@@ -2,7 +2,7 @@ import torch
 from collections import OrderedDict
 from os import path as osp
 from tqdm import tqdm
-
+import numpy as np
 from src.archs import build_network
 from src.losses import build_loss
 from src.metrics import calculate_metric
@@ -78,22 +78,45 @@ class CLModel(BaseModel):
         self.optimizers.append(self.optimizer_g)
 
     def feed_data(self, data):
-        self.input1 = data['input1'].to(self.device)
-        self.input2 = data['input2'].to(self.device)
-        if 'label' in data:
-            self.label = data['label'].to(self.device)
+        self.input = data['pdws'].to(self.device)   # (B, N, 5)
+        self.label = data['labels'].to(self.device) # (B, N)
 
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
-        self.output = self.net_g(self.input1, self.input2)
+        self.output = self.net_g(self.input)   # B, L, D
+        B, N, D = self.output.shape
 
         l_total = 0
         loss_dict = OrderedDict()
 
         if self.cri_infonce:
-            l_infonce = self.cri_infonce(self.output, self.positive, self.negative)
-            l_total += l_infonce
+            l_cl_batch_avg = 0
+            for output, label in zip(self.output, self.label):      # for batch
+                label_unique = torch.unique(label)  # 所有label种类
+                label_num = len(label_unique)
+                l_cl_label_avg = 0
+                for label_elem in label_unique:     # 对每种label，随机挑选出一个锚点，一个正样本，并把其他label的特征作为负样本
+                    label_idx = torch.where(label == label_elem)    # B, N
 
+                    mask = torch.zeros(N, dtype=torch.bool)   # 挑选属于该label的特征
+                    mask[label_idx] = True
+                    feature = output[mask, :]           # N ,D       N为该类label的脉冲数
+
+                    # 在其内随机选择两个，分别为锚点和正样本
+                    anchor_idx, postive_idx = np.random.choice(np.arange(0, feature.shape[1]), 2, replace=False)
+                    anchor = feature[anchor_idx, :].unsqueeze(0)       # (1, D)
+                    positive = feature[postive_idx, :].unsqueeze(0)    # (1, D)
+
+                    # 其余均为负样本特征
+                    negative = output[~mask, :].unsqueeze(0)   # (1, N, D)
+
+                    l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
+                    l_cl_label_avg += l_cl
+                l_cl_label_avg /= label_num
+                l_cl_batch_avg += l_cl_label_avg
+            l_cl_batch_avg /= B
+            l_total += l_cl_batch_avg
+            loss_dict['l_InfoNCE'] = l_cl_batch_avg
         l_total.backward()
         self.optimizer_g.step()
 
@@ -106,60 +129,13 @@ class CLModel(BaseModel):
         if hasattr(self, 'net_g_ema'):
             self.net_g_ema.eval()
             with torch.no_grad():
-                self.output = self.net_g_ema(self.lq)
+                self.output = self.net_g_ema(self.input)
         else:
             self.net_g.eval()
             with torch.no_grad():
-                self.output = self.net_g(self.lq)
+                self.output = self.net_g(self.input)
             self.net_g.train()
 
-    def test_selfensemble(self):
-        # TODO: to be tested
-        # 8 augmentations
-        # modified from https://github.com/thstkdgus35/EDSR-PyTorch
-
-        def _transform(v, op):
-            # if self.precision != 'single': v = v.float()
-            v2np = v.data.cpu().numpy()
-            if op == 'v':
-                tfnp = v2np[:, :, :, ::-1].copy()
-            elif op == 'h':
-                tfnp = v2np[:, :, ::-1, :].copy()
-            elif op == 't':
-                tfnp = v2np.transpose((0, 1, 3, 2)).copy()
-
-            ret = torch.Tensor(tfnp).to(self.device)
-            # if self.precision == 'half': ret = ret.half()
-
-            return ret
-
-        # prepare augmented data
-        lq_list = [self.lq]
-        for tf in 'v', 'h', 't':
-            lq_list.extend([_transform(t, tf) for t in lq_list])
-
-        # inference
-        if hasattr(self, 'net_g_ema'):
-            self.net_g_ema.eval()
-            with torch.no_grad():
-                out_list = [self.net_g_ema(aug) for aug in lq_list]
-        else:
-            self.net_g.eval()
-            with torch.no_grad():
-                out_list = [self.net_g_ema(aug) for aug in lq_list]
-            self.net_g.train()
-
-        # merge results
-        for i in range(len(out_list)):
-            if i > 3:
-                out_list[i] = _transform(out_list[i], 't')
-            if i % 4 > 1:
-                out_list[i] = _transform(out_list[i], 'h')
-            if (i % 4) % 2 == 1:
-                out_list[i] = _transform(out_list[i], 'v')
-        output = torch.cat(out_list, dim=0)
-
-        self.output = output.mean(dim=0, keepdim=True)
 
     def dist_validation(self, dataloader, current_iter, tb_logger, save_img):
         if self.opt['rank'] == 0:
@@ -194,10 +170,10 @@ class CLModel(BaseModel):
             if 'gt' in visuals:
                 gt_img = tensor2img([visuals['gt']])
                 metric_data['img2'] = gt_img
-                del self.gt
+                del self.label
 
             # tentative for out of GPU memory
-            del self.lq
+            del self.input
             del self.output
             torch.cuda.empty_cache()
 
@@ -247,13 +223,6 @@ class CLModel(BaseModel):
             for metric, value in self.metric_results.items():
                 tb_logger.add_scalar(f'metrics/{dataset_name}/{metric}', value, current_iter)
 
-    def get_current_visuals(self):
-        out_dict = OrderedDict()
-        out_dict['lq'] = self.lq.detach().cpu()
-        out_dict['result'] = self.output.detach().cpu()
-        if hasattr(self, 'gt'):
-            out_dict['gt'] = self.gt.detach().cpu()
-        return out_dict
 
     def save(self, epoch, current_iter):
         if hasattr(self, 'net_g_ema'):

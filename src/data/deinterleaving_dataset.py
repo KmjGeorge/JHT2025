@@ -1,11 +1,10 @@
 from torch.utils import data as data
 from src.utils.registry import DATASET_REGISTRY
-from src.data.data_util import read_pdw_from_interleaved
-import numpy as np
 import torch
 import os
+from torch.utils.data import DataLoader
 
-# @DATASET_REGISTRY.register()
+@DATASET_REGISTRY.register()
 class DeinterleavingDataset(data.Dataset):
     """deinterleaving dataset with (pdws, labels) pairs where pdws in (N, 4) and labels in (N, 1)
 
@@ -21,25 +20,22 @@ class DeinterleavingDataset(data.Dataset):
         self.mean = opt['mean'] if 'mean' in opt else None
         self.std = opt['std'] if 'std' in opt else None
         self.folder = opt['dataroot']
-        self.data = []
-        for filename in os.listdir(self.folder):
-            self.data.append(read_pdw_from_interleaved(os.path.join(self.folder, filename)))
-
+        self.filenames = os.listdir(self.folder)
 
     def __getitem__(self, index):
-        data_slice = self.data[index]
-        freqs = data_slice.Freqs
-        pws = data_slice.PWs
-        pas = data_slice.PAs
-        toadots = data_slice.TOAdots
-        pdws = torch.from_numpy(np.stack([freqs, pws, pas, toadots], axis=1))
-        print(data_slice.Labels)
-        labels = torch.from_numpy(data_slice.Labels)
-        return pdws, labels
+        filename = self.filenames[index]
+        data = torch.load(os.path.join(self.folder, filename))
+        pdws = data[:, :-1].float()
+        labels = data[:, -1]
+        return {'pdws': pdws, 'labels': labels}
 
     def __len__(self):
-        return len(self.data)
+        return len(self.filenames)
 
-dataset = DeinterleavingDataset(opt={'dataroot': r'G:\datasets\2025金海豚初赛数据\分选\混合（示例）'})
-for pdw, label in dataset:
-    print(pdw.shape, label.shape)
+if __name__ == '__main__':
+    dataset = DeinterleavingDataset(opt={'dataroot': r'G:\datasets\2025金海豚初赛数据\分选\随机混合切片'})
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+    for data in dataloader:
+        print(data['pdws'].shape)
+        print(data['labels'].shape)
+

@@ -41,7 +41,7 @@ class PrefetchDataLoader(DataLoader):
 
     Reference: https://github.com/IgorSusmelj/pytorch-styleguide/issues/5#
 
-    TODO:
+    TODO.txt:
     Need to test on single gpu and ddp (multi-gpu). There is a known issue in
     ddp.
 

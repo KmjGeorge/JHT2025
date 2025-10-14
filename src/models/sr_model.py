@@ -130,7 +130,7 @@ class SRModel(BaseModel):
             self.net_g.train()
 
     def test_selfensemble(self):
-        # TODO: to be tested
+        # TODO.txt: to be tested
         # 8 augmentations
         # modified from https://github.com/thstkdgus35/EDSR-PyTorch
 

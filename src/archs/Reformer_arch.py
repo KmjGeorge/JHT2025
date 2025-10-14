@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from reformer_pytorch import LSHSelfAttention
 import math
+from src.utils.registry import ARCH_REGISTRY
 
 class TokenEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
@@ -170,7 +171,7 @@ class ReformerLayer(nn.Module):
         queries = self.attn(self.fit_length(queries))[:, :N, :]
         return queries, None
 
-
+@ARCH_REGISTRY.register()
 class Reformer(nn.Module):
     """
     Reformer with O(LlogL) complexity
@@ -223,18 +224,21 @@ class Reformer(nn.Module):
         return dec_out[:, -self.pred_len:, :]  # [B, L, D]
 
 if __name__ == '__main__':
-    model = Reformer(seq_len=100,
-                     enc_in=3,
+    model = Reformer(seq_len=5000,
+                     enc_in=5,
                      d_model=128,
-                     c_out=64,
-                     n_heads=4,
+                     c_out=32,
+                     n_heads=8,
                      d_ff=256,
                      activation='relu',
                      dropout=0.1,
-                     e_layers=6,
-                     bucket_size=4, n_hashes=4).cuda()
+                     e_layers=8,
+                     bucket_size=8, n_hashes=8).cuda()
     # x = torch.randn(8, 100, 3)
     # y = model(x)
     # print(y.shape)
     from torchsummary import summary
-    summary(model, input_data=torch.rand(2, 100, 3))
+    for i in range(1000):
+        x = torch.randn(4, 5000, 5).cuda()
+        y = model(x)
+    summary(model, input_data=torch.rand(4, 5000, 5))

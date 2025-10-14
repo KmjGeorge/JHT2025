@@ -89,7 +89,7 @@ class PairedImageDataset(data.Dataset):
             img_lq = bgr2ycbcr(img_lq, y_only=True)[..., None]
 
         # crop the unmatched GT images during validation or testing, especially for SR benchmark datasets
-        # TODO: It is better to update the datasets, rather than force to crop
+        # TODO.txt: It is better to update the datasets, rather than force to crop
         if self.opt['phase'] != 'train':
             img_gt = img_gt[0:img_lq.shape[0] * scale, 0:img_lq.shape[1] * scale, :]
 

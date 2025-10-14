@@ -128,7 +128,7 @@ class MultiHeadAttention(nn.Module):
         out = self.w_concat(out)
 
         # 5. visualize attention map
-        # TODO : we should implement visualization
+        # TODO.txt : we should implement visualization
 
         return out
 

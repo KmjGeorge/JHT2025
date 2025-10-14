@@ -304,7 +304,7 @@ def random_bivariate_plateau(kernel_size,
         sigma_y = sigma_x
         rotation = 0
 
-    # TODO: this may be not proper
+    # TODO.txt: this may be not proper
     if np.random.uniform() < 0.5:
         beta = np.random.uniform(beta_range[0], 1)
     else:

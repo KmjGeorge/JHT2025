@@ -77,7 +77,7 @@ class RealESRGANDataset(data.Dataset):
         self.final_sinc_prob = opt['final_sinc_prob']
 
         self.kernel_range = [2 * v + 1 for v in range(3, 11)]  # kernel size ranges from 7 to 21
-        # TODO: kernel range is now hard-coded, should be in the configure file
+        # TODO.txt: kernel range is now hard-coded, should be in the configure file
         self.pulse_tensor = torch.zeros(21, 21).float()  # convolving with pulse tensor brings no blurry effect
         self.pulse_tensor[10, 10] = 1
 
@@ -110,7 +110,7 @@ class RealESRGANDataset(data.Dataset):
         img_gt = augment(img_gt, self.opt['use_hflip'], self.opt['use_rot'])
 
         # crop or pad to 400
-        # TODO: 400 is hard-coded. You may change it accordingly
+        # TODO.txt: 400 is hard-coded. You may change it accordingly
         h, w = img_gt.shape[0:2]
         crop_pad_size = 400
         # pad

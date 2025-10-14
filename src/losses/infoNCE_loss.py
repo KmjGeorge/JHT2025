@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from src.utils.registry import LOSS_REGISTRY
 
 
-# LOSS_REGISTRY.register()
+@LOSS_REGISTRY.register()
 class InfoNCELoss(nn.Module):
     """
     Calculates the InfoNCE loss for self-supervised learning.
@@ -58,6 +58,7 @@ class InfoNCELoss(nn.Module):
         self.loss_weight = loss_weight
 
     def forward(self, query, positive_key, negative_keys=None):
+
         return info_nce(query, positive_key, negative_keys,
                         temperature=self.temperature,
                         reduction=self.reduction,
@@ -104,7 +105,7 @@ def info_nce(query, positive_key, negative_keys=None, temperature=0.1, reduction
 
         elif negative_mode == 'paired':
             query = query.unsqueeze(1)
-            negative_logits = query @ transpose(negative_keys)
+            negative_logits = query @ transpose(negative_keys)      # query : (B, D)  negative_keys (B, Num_Neg, D)  negative_logits  (B, D) @ (B D Num_Neg)
             negative_logits = negative_logits.squeeze(1)
 
         # First index in last dimension are the positive samples
@@ -128,6 +129,8 @@ def transpose(x):
 
 def normalize(*xs):
     return [None if x is None else F.normalize(x, dim=-1) for x in xs]
+
+
 
 
 if __name__ == '__main__':
