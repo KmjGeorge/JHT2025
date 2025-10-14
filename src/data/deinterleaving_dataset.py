@@ -1,4 +1,6 @@
 from torch.utils import data as data
+
+from src.data.data_util import normalize_zscore, normalize_minmax
 from src.utils.registry import DATASET_REGISTRY
 import torch
 import os
@@ -25,12 +27,24 @@ class DeinterleavingDataset(data.Dataset):
     def __getitem__(self, index):
         filename = self.filenames[index]
         data = torch.load(os.path.join(self.folder, filename))
-        pdws = data[:, :-1].float()
-        labels = data[:, -1]
+
+        # normalization internally each pdw train
+        # for toa rescale to 0~1; for pw, pa, freq apply z-score
+        # pdws_nonorm = data[:, :-1]
+        freqs = normalize_zscore(data[:, 0])
+        pws = normalize_zscore(data[:, 1])
+        pas = normalize_zscore(data[:, 2])
+        toas = normalize_minmax(data[:, 3])
+        dtoa = normalize_zscore(data[:, 4])
+        # print(freqs.shape, pws.shape, pas.shape, toas.shape, dtoa.shape)
+        pdws = torch.stack([freqs, pws, pas, toas, dtoa], dim=1).float()  # (N, 5)   freq, pw ,pa, toa, dtoa
+        labels = data[:, 5]
         return {'pdws': pdws, 'labels': labels}
 
     def __len__(self):
         return len(self.filenames)
+
+
 
 if __name__ == '__main__':
     dataset = DeinterleavingDataset(opt={'dataroot': r'G:\datasets\2025金海豚初赛数据\分选\随机混合切片'})

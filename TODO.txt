@@ -1,5 +1,5 @@
-1、PDW Norm
+1、PDW Norm  √
 2、测试集
-3、metrics
+3、metrics   ○
 4、配套配置文件
 5、更好的Loss和网络架构

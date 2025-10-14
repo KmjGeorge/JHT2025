@@ -232,3 +232,12 @@ class PDW_Interleaved:
 
     def update_dtoa(self):
         self.DTOAs = np.concatenate([[0], np.diff(self.TOAdots)])
+
+def normalize_minmax(tensor):
+    min_, max_ = tensor.min(), tensor.max()
+    return (tensor - min_) / (max_ - min_)
+def normalize_zscore(tensor):
+    min_, max_ = tensor.min(), tensor.max()
+    tensor = (tensor - min_) / (max_ - min_)
+    mean_, std_ = tensor.mean(), tensor.std()
+    return (tensor - mean_) / std_

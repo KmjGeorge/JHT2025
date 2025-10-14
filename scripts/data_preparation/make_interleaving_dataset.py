@@ -4,21 +4,25 @@ import re
 import h5py
 import numpy as np
 import matplotlib.pyplot as plt
-from openpyxl.styles.builtins import total
 
 
 class PDWTrain:
-    def __init__(self, Freqs, PAs, Labels, Tag_CenterFreqs, Tag_SampleRates, PWs, TOAdots, missing_rate=0., IntraPulse=None):
+    def __init__(self, Freqs, PAs, Labels, Tag_CenterFreqs, Tag_SampleRates, PWs, TOAdots, missing_rate=0.,
+                 IntraPulse=None):
+
+        if Tag_CenterFreqs is not None:
+            self.Tag_CenterFreqs = Tag_CenterFreqs
+        if Tag_SampleRates is not None:
+            self.Tag_SampleRates = Tag_SampleRates
+
         self.Freqs = Freqs
         self.PAs = PAs
         self.Labels = Labels
-        # self.Indexs = Indexs-
-        self.Tag_CenterFreqs = Tag_CenterFreqs
-        self.Tag_SampleRates = Tag_SampleRates
         self.PWs = PWs
-        self.TOAdots = TOAdots  # ns - > us
+        self.TOAdots = TOAdots
         self.missing_rate = missing_rate
-        self.IntraPulse = IntraPulse
+        if IntraPulse is not None:
+            self.IntraPulse = IntraPulse
 
     #  获取数据范围
     def get_data_range(self):
@@ -62,7 +66,6 @@ class PDWTrain:
         plt.tight_layout()
         plt.savefig(save_path, bbox_inches='tight')
 
-
     def __len__(self):
         return len(self.TOAdots)
 
@@ -80,15 +83,16 @@ def read_pdw(path):
 
         # f.visititems(print_all_keys)
         Tag_Nums = np.array(f['TAG']['NUM']).squeeze()
-        Freqs = np.array(f['InterPulse']['Freq']).squeeze()
+        Tag_CenterFreqs = np.repeat(f['TAG']['CenterFreq'][0][0], Tag_Nums)
+        Tag_SampleRates = np.repeat(f['TAG']['SampleRate'][0][0], Tag_Nums)
+        Freqs = np.array(f['InterPulse']['Freq']).squeeze() + Tag_CenterFreqs
         PAs = np.array(f['InterPulse']['PA']).squeeze()
         try:
             Labels = np.repeat(int(f['InterPulse']['LABEL'][0][0]), Tag_Nums)
         except:
             Labels = None
         # Indexs = np.array(f['InterPulse']['INDEX']).squeeze()
-        Tag_CenterFreqs = np.repeat(f['TAG']['CenterFreq'][0][0], Tag_Nums)
-        Tag_SampleRates = np.repeat(f['TAG']['SampleRate'][0][0], Tag_Nums)
+
         PWdots = np.array(f['InterPulse']['PWdot']).squeeze()
         PWs = PWdots / Tag_SampleRates  # us
         TOAdots = np.array(f['InterPulse']['TOAdot']).squeeze() / 1e3  # ns -> us
@@ -98,6 +102,7 @@ def read_pdw(path):
         except:
             pdwtrain = PDWTrain(Freqs, PAs, Labels, Tag_CenterFreqs, Tag_SampleRates, PWs, TOAdots)
         return pdwtrain
+
 
 def draw_pdw(pdw, save_path):
     plt.figure(figsize=(24, 12))
@@ -127,6 +132,36 @@ def draw_pdw(pdw, save_path):
         plt.show()
         plt.close()
 
+
+def draw_pdw_with_label(pdw, save_path):
+    plt.figure(figsize=(24, 12))
+    plt.subplot(221)
+    plt.title('Freq')
+    x = [i + 1 for i in range(len(pdw.Freqs))]
+    plt.scatter(x, pdw.Freqs, c=pdw.Labels, s=0.1)
+
+    plt.subplot(222)
+    plt.title('DTOA(us)')
+    dtoa = np.concatenate(([0], np.diff(pdw.TOAdots)))
+    plt.scatter(x, dtoa, c=pdw.Labels, s=0.1)
+
+    plt.subplot(223)
+    plt.title('PW')
+    plt.scatter(x, pdw.PWs, c=pdw.Labels, s=0.1)
+
+    plt.subplot(224)
+    plt.title('PA')
+    plt.scatter(x, pdw.PAs, c=pdw.Labels, s=0.1)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=100)
+        plt.close()
+    else:
+        plt.show()
+        plt.close()
+
+
 def random_missing(pdw_train, missing_rate=0.2):
     length = len(pdw_train)
     selected = int(length * (1 - missing_rate))
@@ -139,8 +174,10 @@ def random_missing(pdw_train, missing_rate=0.2):
     selected_label = pdw_train.Labels[selected_indices]
     selected_tag_centerfreqs = pdw_train.Tag_CenterFreqs[selected_indices]
     selected_tag_samplerates = pdw_train.Tag_SampleRates[selected_indices]
-    return PDWTrain(selected_freq,selected_pa,selected_label, selected_tag_centerfreqs, selected_tag_samplerates, selected_pw,
-               selected_toa)
+    return PDWTrain(selected_freq, selected_pa, selected_label, selected_tag_centerfreqs, selected_tag_samplerates,
+                    selected_pw,
+                    selected_toa)
+
 
 def random_interleaving(emitter_num, missing_uprate, path, return_single=False):
     info = {'emitters': [],
@@ -152,7 +189,6 @@ def random_interleaving(emitter_num, missing_uprate, path, return_single=False):
     pdw_trains = []
     pattern = re.compile(r'S_(\d\d\d\d)_')
     for filename in selected:
-
         pdw_train = read_pdw(os.path.join(path, filename))
         missing_rate = np.random.uniform(0, missing_uprate)
         pdw_train = random_missing(pdw_train, missing_rate=missing_rate)
@@ -215,11 +251,11 @@ def random_interleaving(emitter_num, missing_uprate, path, return_single=False):
     sorted_tag_samplerates = merged_tag_samplerates[sorted_indices]
     if return_single:
         return PDWTrain(sorted_freq, sorted_pa, sorted_label, sorted_tag_centerfreqs, sorted_tag_samplerates, sorted_pw,
-                 sorted_toa), pdw_trains, info
+                        sorted_toa), pdw_trains, info
 
     else:
         return PDWTrain(sorted_freq, sorted_pa, sorted_label, sorted_tag_centerfreqs, sorted_tag_samplerates, sorted_pw,
-                   sorted_toa), info
+                        sorted_toa), info
 
 
 def make_clipping(path, save_path, stride=3000, overlap=0.2):
@@ -228,7 +264,8 @@ def make_clipping(path, save_path, stride=3000, overlap=0.2):
         data = torch.load(os.path.join(path, filename))
         slices = sliding_window_slice(data, stride, overlap)
         for idx, slice in enumerate(slices):
-            torch.save(slice, os.path.join(save_path, filename.replace('.pt', '_{}.pt').format(idx+1)))
+            torch.save(slice, os.path.join(save_path, filename.replace('.pt', '_{}.pt').format(idx + 1)))
+
 
 def sliding_window_slice(tensor, stride, overlap):
     """
@@ -251,7 +288,6 @@ def sliding_window_slice(tensor, stride, overlap):
     # 获取数据长度
     length = tensor.shape[0]
 
-
     # 计算起始索引
     start_indices = []
     start = 0
@@ -271,23 +307,33 @@ def sliding_window_slice(tensor, stride, overlap):
     return slices
 
 
+def z_score(data):
+    data_max, data_min = data.max(), data.min()
+    data = (data - data_min) / (data_max - data_min)
+    data_mean, data_std = data.mean(), data.std()
+    data = (data - data_mean) / data_std
+    return data
+
+
 if __name__ == '__main__':
     import torch
     from tqdm import tqdm
+
     # matplotlib.use('TkAgg')
-    root = r'G:\datasets\2025金海豚初赛数据\分选\单一完整'
-    save_path = r'G:\datasets\JHT2025Pre\RandomMixed'
-    save_figure_path = r'G:\datasets\JHT2025Pre\MixedFigure'
-    save_slice_path = r'G:\datasets\JHT2025Pre\MixedAndClipped'
-    repeat_num = 10
+    root = r'F:\Datasets\2025金海豚初赛数据\分选\单一完整'
+    save_path = r'F:\Datasets\JHT2025Pre\RandomMixed'
+    save_figure_path = r'F:\Datasets\JHT2025Pre\MixedFigure'
+    save_slice_path = r'F:\Datasets\JHT2025Pre\MixedAndClipped'
+    repeat_num = 3
     missing_uprate = 0.2
     clipping_stride = 3000
     clipping_overlap = 0.2
     save_figure = False
 
-    for emitter_num in [2, 3, 4, 5, 6, 7, 8, 9, 10]:
+    for emitter_num in [2, 3, 4, 5]:
         for _ in tqdm(range(repeat_num)):
-            merged, pdw_trains, info = random_interleaving(emitter_num=emitter_num, missing_uprate=missing_uprate, path=root, return_single=True)
+            merged, pdw_trains, info = random_interleaving(emitter_num=emitter_num, missing_uprate=missing_uprate,
+                                                           path=root, return_single=True)
             emitters = '+'.join(info['emitters'])
             total_num = sum(info['pdw_nums'])
             freqs = merged.Freqs
@@ -296,6 +342,7 @@ if __name__ == '__main__':
             toas = merged.TOAdots
             dtoa = merged.update_dtoa()
             labels = merged.Labels
+
             input_data = torch.from_numpy(np.stack([freqs, pws, pas, toas, dtoa, labels], axis=1))
             torch.save(input_data, os.path.join(save_path, '{}_{}.pt').format(emitters, total_num))
             if save_figure:

@@ -93,9 +93,9 @@ class CLModel(BaseModel):
             l_cl_batch_avg = 0
             for output, label in zip(self.output, self.label):      # for batch
                 label_unique = torch.unique(label)  # 所有label种类
-                label_num = len(label_unique)
+                label_cnt = 0
                 l_cl_label_avg = 0
-                for label_elem in label_unique:     # 对每种label，随机挑选出一个锚点，一个正样本，并把其他label的特征作为负样本
+                for label_elem in label_unique:     # 对每种label，随机挑选出一个样本作为锚点，另一个作为正样本，并把其他label的特征作为负样本
                     label_idx = torch.where(label == label_elem)    # B, N
 
                     mask = torch.zeros(N, dtype=torch.bool)   # 挑选属于该label的特征
@@ -103,7 +103,10 @@ class CLModel(BaseModel):
                     feature = output[mask, :]           # N ,D       N为该类label的脉冲数
 
                     # 在其内随机选择两个，分别为锚点和正样本
-                    anchor_idx, postive_idx = np.random.choice(np.arange(0, feature.shape[1]), 2, replace=False)
+                    if feature.shape[0] < 2:      # 不足2个则跳过
+                        continue
+                    label_cnt += 1
+                    anchor_idx, postive_idx = np.random.choice(np.arange(0, feature.shape[0]), 2, replace=False)
                     anchor = feature[anchor_idx, :].unsqueeze(0)       # (1, D)
                     positive = feature[postive_idx, :].unsqueeze(0)    # (1, D)
 
@@ -112,7 +115,7 @@ class CLModel(BaseModel):
 
                     l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
                     l_cl_label_avg += l_cl
-                l_cl_label_avg /= label_num
+                l_cl_label_avg /= label_cnt
                 l_cl_batch_avg += l_cl_label_avg
             l_cl_batch_avg /= B
             l_total += l_cl_batch_avg
