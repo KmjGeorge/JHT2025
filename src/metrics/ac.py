@@ -1,7 +1,9 @@
 import torch
 import torch.nn.functional as F
+from src.utils.registry import METRIC_REGISTRY
 
-def calculate_ac(true_labels, pred_labels):
+@METRIC_REGISTRY.register()
+def calculate_ac(pred_labels, true_labels):
     """
     计算准确率 (Accuracy)
     :param true_labels: 真实标签，形状为 [n_samples]
@@ -9,6 +11,8 @@ def calculate_ac(true_labels, pred_labels):
     :return: AC 值
     """
     # 使用匈牙利算法找到最佳标签映射
+    pred_labels = pred_labels.long()
+    true_labels = true_labels.long()
     n_classes = max(true_labels.max(), pred_labels.max()) + 1
     one_hot_true = F.one_hot(true_labels, n_classes).float()
     one_hot_pred = F.one_hot(pred_labels, n_classes).float()
@@ -30,13 +34,3 @@ def calculate_ac(true_labels, pred_labels):
     correct = torch.sum(mapped_pred == true_labels)
     return correct.float() / true_labels.shape[0]
 
-
-# 示例用法
-if __name__ == "__main__":
-    # 创建示例数据
-    true_labels = torch.tensor([0, 0, 1, 1, 2, 2])
-    pred_labels = torch.tensor([1, 1, 0, 0, 2, 2])
-    from src import calculate_nmi, calculate_ari
-    print("NMI:", calculate_nmi(true_labels, pred_labels).item())
-    print("ARI:", calculate_ari(true_labels, pred_labels).item())
-    print("AC:", calculate_ac(true_labels, pred_labels).item())

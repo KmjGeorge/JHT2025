@@ -1,7 +1,5 @@
 import numpy as np
 
-from src.utils import bgr2ycbcr
-
 
 def reorder_image(img, input_order='HWC'):
     """Reorder images to 'HWC' order.
@@ -28,18 +26,3 @@ def reorder_image(img, input_order='HWC'):
         img = img.transpose(1, 2, 0)
     return img
 
-
-def to_y_channel(img):
-    """Change to Y channel of YCbCr.
-
-    Args:
-        img (ndarray): Images with range [0, 255].
-
-    Returns:
-        (ndarray): Images with range [0, 255] (float type) without round.
-    """
-    img = img.astype(np.float32) / 255.
-    if img.ndim == 3 and img.shape[2] == 3:
-        img = bgr2ycbcr(img, y_only=True)
-        img = img[..., None]
-    return img * 255.

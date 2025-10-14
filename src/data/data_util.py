@@ -1,11 +1,14 @@
+import os
+
 import numpy as np
 import torch
 from os import path as osp
 from torch.nn import functional as F
 import h5py
-from src.data.transforms import mod_crop
+import pandas as pd
 from src.utils import img2tensor, scandir
 import matplotlib.pyplot as plt
+
 
 def paired_paths_from_folder(folders, keys, filename_tmpl):
     """Generate paired paths from folders.
@@ -124,22 +127,25 @@ def duf_downsample(x, kernel_size=13, scale=4):
         x = x.squeeze(0)
     return x
 
-class PDW:
-    def __init__(self, Freqs, PAs, Labels, Indexs, Tag_CenterFreqs, Tag_Nums, Tag_SampleRates, PWdots, TOAdots, IntraPulse=None):
+
+class PDWTrain:
+    def __init__(self, Freqs, PAs, Labels, Tag_CenterFreqs, Tag_SampleRates, PWs, TOAdots, missing_rate=0.,
+                 IntraPulse=None):
+
+        if Tag_CenterFreqs is not None:
+            self.Tag_CenterFreqs = Tag_CenterFreqs
+        if Tag_SampleRates is not None:
+            self.Tag_SampleRates = Tag_SampleRates
+
         self.Freqs = Freqs
         self.PAs = PAs
         self.Labels = Labels
-        self.Indexs = Indexs
-        self.Tag_CenterFreqs = Tag_CenterFreqs
-        self.Tag_Nums = Tag_Nums
-        self.Tag_SampleRates = Tag_SampleRates
-        self.PWdots = PWdots
-        self.PWs = PWdots / Tag_SampleRates  # dot -> us
-        self.TOAdots = TOAdots / 1e3   # ns - > us
-        self.IntraPulse = IntraPulse
+        self.PWs = PWs
+        self.TOAdots = TOAdots
+        self.missing_rate = missing_rate
+        if IntraPulse is not None:
+            self.IntraPulse = IntraPulse
 
-    def __len__(self):
-        return len(self.TOAdots)
     #  获取数据范围
     def get_data_range(self):
         result = {'freq': [self.Freqs.max(), self.Freqs.min()],
@@ -182,62 +188,139 @@ class PDW:
         plt.tight_layout()
         plt.savefig(save_path, bbox_inches='tight')
 
+    def __len__(self):
+        return len(self.TOAdots)
+
+    def update_dtoa(self):
+        self.DTOA = np.concatenate([[0], np.diff(self.TOAdots)], axis=0)
+        return self.DTOA
+
 
 def read_pdw(path):
+    label_map = {'1111': 0,
+                 '1112': 1,
+                 '1121': 2,
+                 '1131': 3,
+                 '1132': 4,
+                 '1141': 5,
+                 '1151': 6,
+                 '1311': 7,
+                 '1421': 8,
+                 '1422': 9,
+                 '1451': 10,
+                 '2111': 11,
+                 '2151': 12,
+                 '2211': 13,
+                 '2421': 14}
     with h5py.File(path, 'r') as f:
         def print_all_keys(name, obj):
             print("文件中的所有键：")
             if isinstance(obj, (h5py.Dataset, h5py.Group)):
                 print(name)
-        # f.visititems(print_all_keys)
 
-        Freqs = np.array(f['InterPulse']['Freq']).squeeze()
+        # f.visititems(print_all_keys)
+        Tag_Nums = np.array(f['TAG']['NUM']).squeeze()
+        Tag_CenterFreqs = np.repeat(f['TAG']['CenterFreq'][0][0], Tag_Nums)
+        Tag_SampleRates = np.repeat(f['TAG']['SampleRate'][0][0], Tag_Nums)
+        Freqs = np.array(f['InterPulse']['Freq']).squeeze() + Tag_CenterFreqs
         PAs = np.array(f['InterPulse']['PA']).squeeze()
         try:
-            Labels = np.array(f['InterPulse']['LABEL']).squeeze()
+            Labels = np.repeat(int(f['InterPulse']['LABEL'][0][0]), Tag_Nums)
+            for j, label in enumerate(Labels):
+                Labels[j] = label_map[str(label)]
         except:
             Labels = None
-        Indexs = np.array(f['InterPulse']['INDEX']).squeeze()
-        Tag_CenterFreqs = np.array(f['TAG']['CenterFreq']).squeeze()
-        Tag_Nums = np.array(f['TAG']['NUM']).squeeze()
-        Tag_SampleRates = np.array(f['TAG']['SampleRate']).squeeze()
+        # Indexs = np.array(f['InterPulse']['INDEX']).squeeze()
+
         PWdots = np.array(f['InterPulse']['PWdot']).squeeze()
-        TOAdots = np.array(f['InterPulse']['TOAdot']).squeeze()
+        PWs = PWdots / Tag_SampleRates  # us
+        TOAdots = np.array(f['InterPulse']['TOAdot']).squeeze() / 1e3  # ns -> us
         try:
             IntraPulse = np.array(f['IntraPulse']['DATA']).squeeze()
-            pdw = PDW(Freqs, PAs, Labels, Indexs, Tag_CenterFreqs, Tag_Nums, Tag_SampleRates, PWdots, TOAdots, IntraPulse)
+            pdwtrain = PDWTrain(Freqs, PAs, Labels, Tag_CenterFreqs, Tag_SampleRates, PWs, TOAdots, IntraPulse)
         except:
-            pdw = PDW(Freqs, PAs, Labels, Indexs, Tag_CenterFreqs, Tag_Nums, Tag_SampleRates, PWdots, TOAdots)
-        return pdw
+            pdwtrain = PDWTrain(Freqs, PAs, Labels, Tag_CenterFreqs, Tag_SampleRates, PWs, TOAdots)
+        return pdwtrain
 
 
-def read_pdw_from_interleaved(path):
-    with h5py.File(path, 'r') as f:
-        Freqs = np.array(f['InterPulse']['Freq']).squeeze()
-        PAs = np.array(f['InterPulse']['PA']).squeeze()
-        Labels = np.array(f['InterPulse']['LABEL']).squeeze()
-        PWs = np.array(f['InterPulse']['PWdot']).squeeze()     ### us ###
-        TOAdots = np.array(f['InterPulse']['TOAdot']).squeeze()
-        pdw = PDW_Interleaved(Freqs, PAs, Labels, PWs, TOAdots)
-        return pdw
+def draw_pdwtrain(pdw, save_path):
+    plt.figure(figsize=(24, 12))
+    plt.subplot(221)
+    plt.title('Freq')
+    x = [i + 1 for i in range(len(pdw.Freqs))]
+    plt.scatter(x, pdw.Freqs, color='r', s=0.1)
+
+    plt.subplot(222)
+    plt.title('DTOA(us)')
+    dtoa = np.concatenate(([0], np.diff(pdw.TOAdots)))
+    plt.scatter(x, dtoa, color='purple', s=0.1)
+
+    plt.subplot(223)
+    plt.title('PW')
+    plt.scatter(x, pdw.PWs, color='blue', s=0.1)
+
+    plt.subplot(224)
+    plt.title('PA')
+    plt.scatter(x, pdw.PAs, color='g', s=0.1)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=100)
+        plt.close()
+    else:
+        plt.show()
+        plt.close()
 
 
-class PDW_Interleaved:
-    def __init__(self, Freqs, PAs, Labels, PWs, TOAdots):
-        self.Freqs = Freqs
-        self.PAs = PAs
-        self.Labels = Labels
-        self.PWs = PWs
-        self.TOAdots = TOAdots
+def draw_pdwtrain_with_label(pdw, save_path):
+    plt.figure(figsize=(24, 12))
+    plt.subplot(221)
+    plt.title('Freq')
+    x = [i + 1 for i in range(len(pdw.Freqs))]
+    plt.scatter(x, pdw.Freqs, c=pdw.Labels, s=0.1)
 
-    def update_dtoa(self):
-        self.DTOAs = np.concatenate([[0], np.diff(self.TOAdots)])
+    plt.subplot(222)
+    plt.title('DTOA(us)')
+    dtoa = np.concatenate(([0], np.diff(pdw.TOAdots)))
+    plt.scatter(x, dtoa, c=pdw.Labels, s=0.1)
+
+    plt.subplot(223)
+    plt.title('PW')
+    plt.scatter(x, pdw.PWs, c=pdw.Labels, s=0.1)
+
+    plt.subplot(224)
+    plt.title('PA')
+    plt.scatter(x, pdw.PAs, c=pdw.Labels, s=0.1)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=100)
+        plt.close()
+    else:
+        plt.show()
+        plt.close()
+
 
 def normalize_minmax(tensor):
     min_, max_ = tensor.min(), tensor.max()
     return (tensor - min_) / (max_ - min_)
+
+
 def normalize_zscore(tensor):
     min_, max_ = tensor.min(), tensor.max()
     tensor = (tensor - min_) / (max_ - min_)
     mean_, std_ = tensor.mean(), tensor.std()
     return (tensor - mean_) / std_
+
+
+def pdw_write(label, label_gt, data, save_img_path):
+    dir_name = os.path.abspath(os.path.dirname(save_img_path))
+    os.makedirs(dir_name, exist_ok=True)
+    freqs, pws, pas, toas = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
+    pdwtrain = PDWTrain(freqs, pas, label, None, None, pws, toas)
+    pdwtrain_gt = PDWTrain(freqs, pas, label_gt, None, None, pws, toas)
+    draw_pdwtrain_with_label(pdwtrain, save_img_path)
+    draw_pdwtrain_with_label(pdwtrain_gt, save_img_path.replace('.png', '_gt.png'))
+    df1, df2 = pd.DataFrame(label), pd.DataFrame(label_gt)
+    df1.to_csv(save_img_path.replace('.png', '.csv'), index=True)
+    df2.to_csv(save_img_path.replace('.png', '_gt.csv'), index=True)

@@ -1,3 +1,4 @@
+import hdbscan
 import torch
 from collections import OrderedDict
 from os import path as osp
@@ -9,6 +10,7 @@ from src.metrics import calculate_metric
 from src.utils import get_root_logger, imwrite, tensor2img
 from src.utils.registry import MODEL_REGISTRY
 from .base_model import BaseModel
+from ..data.data_util import pdw_write
 
 
 @MODEL_REGISTRY.register()
@@ -80,6 +82,7 @@ class CLModel(BaseModel):
     def feed_data(self, data):
         self.input = data['pdws'].to(self.device)   # (B, N, 5)
         self.label = data['labels'].to(self.device) # (B, N)
+        self.input_nonorm = data['pdws_nonorm']
 
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
@@ -140,11 +143,11 @@ class CLModel(BaseModel):
             self.net_g.train()
 
 
-    def dist_validation(self, dataloader, current_iter, tb_logger, save_img):
+    def dist_validation(self, dataloader, current_iter, tb_logger, save_pdw):
         if self.opt['rank'] == 0:
-            self.nondist_validation(dataloader, current_iter, tb_logger, save_img)
+            self.nondist_validation(dataloader, current_iter, tb_logger, save_pdw)
 
-    def nondist_validation(self, dataloader, current_iter, tb_logger, save_img):
+    def nondist_validation(self, dataloader, current_iter, tb_logger, save_pdw):
         dataset_name = dataloader.dataset.opt['name']
         with_metrics = self.opt['val'].get('metrics') is not None
         use_pbar = self.opt['val'].get('pbar', False)
@@ -160,38 +163,36 @@ class CLModel(BaseModel):
 
         metric_data = dict()
         if use_pbar:
-            pbar = tqdm(total=len(dataloader), unit='image')
+            pbar = tqdm(total=len(dataloader), unit='pulse')
+
+        clusterer = hdbscan.HDBSCAN(min_cluster_size=2)
 
         for idx, val_data in enumerate(dataloader):
-            img_name = osp.splitext(osp.basename(val_data['lq_path'][0]))[0]
+            data_name = osp.splitext(osp.basename(val_data['data_path'][0]))[0]
             self.feed_data(val_data)
             self.test()
 
-            visuals = self.get_current_visuals()
-            sr_img = tensor2img([visuals['result']])
-            metric_data['img'] = sr_img
-            if 'gt' in visuals:
-                gt_img = tensor2img([visuals['gt']])
-                metric_data['img2'] = gt_img
-                del self.label
+            cluster_labels = clusterer.fit_predict(self.output.squeeze(0).detach().cpu().numpy())
+            cluster_num = max(cluster_labels) + 1
+            # 若存在标签为-1的离群点，将其视为一个新类
+            if np.where(cluster_labels < 0):
+                cluster_labels[np.where(cluster_labels < 0)] = cluster_num + 1
 
-            # tentative for out of GPU memory
-            del self.input
-            del self.output
-            torch.cuda.empty_cache()
-
-            if save_img:
+            metric_data['pred_labels'] = torch.from_numpy(cluster_labels)
+            metric_data['true_labels'] = self.label.squeeze(0).detach().cpu()
+            if save_pdw:
                 if self.opt['is_train']:
-                    save_img_path = osp.join(self.opt['path']['visualization'], img_name,
-                                             f'{img_name}_{current_iter}.png')
+                    save_img_path = osp.join(self.opt['path']['visualization'], data_name,
+                                             f'{data_name}_iter{current_iter}.png')
                 else:
                     if self.opt['val']['suffix']:
                         save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
-                                                 f'{img_name}_{self.opt["val"]["suffix"]}.png')
+                                 f'{data_name}_{self.opt["val"]["suffix"]}.png')
                     else:
                         save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
-                                                 f'{img_name}_{self.opt["name"]}.png')
-                imwrite(sr_img, save_img_path)
+                                                 f'{data_name}_{self.opt["name"]}.png')
+                pdw_write(metric_data['pred_labels'].numpy(), metric_data['true_labels'].numpy(),
+                          self.input_nonorm.squeeze(0).detach().cpu().numpy(), save_img_path)
 
             if with_metrics:
                 # calculate metrics
@@ -199,7 +200,7 @@ class CLModel(BaseModel):
                     self.metric_results[name] += calculate_metric(metric_data, opt_)
             if use_pbar:
                 pbar.update(1)
-                pbar.set_description(f'Test {img_name}')
+                pbar.set_description(f'Test {data_name}')
         if use_pbar:
             pbar.close()
 

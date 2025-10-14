@@ -6,6 +6,7 @@ import torch
 import os
 from torch.utils.data import DataLoader
 
+
 @DATASET_REGISTRY.register()
 class DeinterleavingDataset(data.Dataset):
     """deinterleaving dataset with (pdws, labels) pairs where pdws in (N, 4) and labels in (N, 1)
@@ -26,11 +27,12 @@ class DeinterleavingDataset(data.Dataset):
 
     def __getitem__(self, index):
         filename = self.filenames[index]
-        data = torch.load(os.path.join(self.folder, filename))
+        data_path = os.path.join(self.folder, filename)
+        data = torch.load(data_path)
 
         # normalization internally each pdw train
         # for toa rescale to 0~1; for pw, pa, freq apply z-score
-        # pdws_nonorm = data[:, :-1]
+        pdws_nonorm = data[:, :-1]
         freqs = normalize_zscore(data[:, 0])
         pws = normalize_zscore(data[:, 1])
         pas = normalize_zscore(data[:, 2])
@@ -39,11 +41,10 @@ class DeinterleavingDataset(data.Dataset):
         # print(freqs.shape, pws.shape, pas.shape, toas.shape, dtoa.shape)
         pdws = torch.stack([freqs, pws, pas, toas, dtoa], dim=1).float()  # (N, 5)   freq, pw ,pa, toa, dtoa
         labels = data[:, 5]
-        return {'pdws': pdws, 'labels': labels}
+        return {'pdws': pdws, 'pdws_nonorm': pdws_nonorm, 'labels': labels, 'data_path': data_path}
 
     def __len__(self):
         return len(self.filenames)
-
 
 
 if __name__ == '__main__':
@@ -52,4 +53,3 @@ if __name__ == '__main__':
     for data in dataloader:
         print(data['pdws'].shape)
         print(data['labels'].shape)
-

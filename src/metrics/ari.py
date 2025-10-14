@@ -1,13 +1,18 @@
 import torch
 import torch.nn.functional as F
+from src.utils.registry import METRIC_REGISTRY
 
-def calculate_ari(true_labels, pred_labels):
+@METRIC_REGISTRY.register()
+def calculate_ari(pred_labels, true_labels):
     """
     计算调整兰德指数 (Adjusted Rand Index)
     :param true_labels: 真实标签，形状为 [n_samples]
     :param pred_labels: 预测标签，形状为 [n_samples]
     :return: ARI 值
     """
+    pred_labels = pred_labels.long()
+    true_labels = true_labels.long()
+
     n_samples = true_labels.shape[0]
 
     # 创建真实标签和预测标签的独热编码
