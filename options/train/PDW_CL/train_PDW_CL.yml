@@ -81,14 +81,15 @@ train:
     reduction: mean
 
 ## validation settings
-#val:
-#  val_freq: !!float 5e3
-#
-#  metrics:
-#    psnr: # metric name, can be arbitrary
-#      type: calculate_psnr
-#      crop_border: 4
-#      test_y_channel: false
+val:
+  val_freq: !!float 5e3
+  metrics:
+    ac: # metric name, can be arbitrary
+      type: calculate_ac
+    nmi:
+      type: calculate_nmi
+    ari:
+      type: calculate_ari
 
 # logging settings
 logger:
