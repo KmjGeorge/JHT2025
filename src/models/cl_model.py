@@ -25,17 +25,32 @@ class CLModel(BaseModel):
         self.net_g = self.model_to_device(self.net_g)
         self.print_network(self.net_g)
 
+        try:
+            self.net_h = build_network(self.opt['network_h'])
+            self.net_h = self.model_to_device(self.net_h)
+            self.print_network(self.net_h)
+        except:
+            self.net_h = None
+
         # load pretrained models
         load_path = self.opt['path'].get('pretrain_network_g', None)
         if load_path is not None:
             param_key = self.opt['path'].get('param_key_g', 'params')
             self.load_network(self.net_g, load_path, self.opt['path'].get('strict_load_g', True), param_key)
 
+        load_path_h = self.opt['path'].get('pretrain_network_h', None)
+        if load_path_h  is not None:
+            param_key = self.opt['path'].get('param_key_h', 'params')
+            self.load_network(self.net_h, load_path_h, self.opt['path'].get('strict_load_h', True), param_key)
+
         if self.is_train:
             self.init_training_settings()
 
     def init_training_settings(self):
         self.net_g.train()
+        if self.net_h is not None:
+            self.net_h.train()
+
         train_opt = self.opt['train']
 
         self.ema_decay = train_opt.get('ema_decay', 0)
@@ -58,8 +73,8 @@ class CLModel(BaseModel):
         if train_opt.get('infonce_opt'):
             self.cri_infonce = build_loss(train_opt['infonce_opt']).to(self.device)
 
-        if train_opt.get('triplet_opt'):
-            self.cri_triplet = build_loss(train_opt['triplet_opt']).to(self.device)
+        if train_opt.get('seqce_opt'):
+            self.cri_seqce = build_loss(train_opt['seqce_opt']).to(self.device)
 
         # set up optimizers and schedulers
         self.setup_optimizers()
@@ -78,6 +93,7 @@ class CLModel(BaseModel):
         optim_type = train_opt['optim_g'].pop('type')
         self.optimizer_g = self.get_optimizer(optim_type, optim_params, **train_opt['optim_g'])
         self.optimizers.append(self.optimizer_g)
+
 
     def feed_data(self, data):
         self.input = data['pdws'].to(self.device)   # (B, N, 5)
@@ -128,6 +144,13 @@ class CLModel(BaseModel):
             l_cl_batch_avg /= B
             l_total += l_cl_batch_avg
             loss_dict['l_InfoNCE'] = l_cl_batch_avg
+
+        if self.cri_seqce:
+            pred_logits = self.net_h(self.output)
+            l_seqce = self.cri_seqce(pred_logits, self.label)
+            l_total += l_seqce
+            loss_dict['l_SeqCE'] = l_seqce
+
         l_total.backward()
         self.optimizer_g.step()
 
@@ -146,6 +169,7 @@ class CLModel(BaseModel):
             with torch.no_grad():
                 self.output = self.net_g(self.input)
             self.net_g.train()
+
 
 
     def dist_validation(self, dataloader, current_iter, tb_logger, save_img):
@@ -239,4 +263,6 @@ class CLModel(BaseModel):
             self.save_network([self.net_g, self.net_g_ema], 'net_g', current_iter, param_key=['params', 'params_ema'])
         else:
             self.save_network(self.net_g, 'net_g', current_iter)
+        if self.net_h is not None:
+            self.save_network(self.net_h, 'net_h', current_iter)
         self.save_training_state(epoch, current_iter)
