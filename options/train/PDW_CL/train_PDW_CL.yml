@@ -1,7 +1,3 @@
-# Modified SRResNet w/o BN from:
-# Photo-Realistic Single Image Super-Resolution Using a Generative Adversarial Network
-# Use perceptual loss before ReLU as ESRGAN does
-
 # general settings
 name: 004_Deinterleaving_Reformer_CL_2to10_2k_allNeg_LossImpl3
 model_type: CLModel
@@ -70,10 +66,14 @@ train:
     betas: [0.9, 0.99]
 
   scheduler:
-    type: CosineAnnealingRestartLR
-    periods: [100000, 100000, 100000, 100000]
-    restart_weights: [1, 0.5, 0.5, 0.5]
-    eta_min: !!float 1e-6
+#    type: CosineAnnealingRestartLR
+#    periods: [100000, 100000, 100000, 100000]
+#    restart_weights: [1, 0.5, 0.5, 0.5]
+#    eta_min: !!float 1e-6
+
+    type: MultiStepLR
+    milestones: [300000, 500000]
+    gamma: 0.5
 
   total_iter: 400000
   warmup_iter: -1  # no warm up
@@ -82,6 +82,7 @@ train:
   infonce_opt:
     type: InfoNCELoss
     loss_weight: 1.0
+    temperature: 0.1
     negative_mode: unpaired
     reduction: mean
 
