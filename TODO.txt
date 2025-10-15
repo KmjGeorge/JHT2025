@@ -1,5 +1,12 @@
 1、PDW Norm  √
-2、测试集
+2、测试集 √
 3、metrics   ○
-4、配套配置文件
+4、配套配置文件 √
 5、更好的Loss和网络架构
+
+
+1  AC NMI ARI实现确认 nan原因：有的切片只有一个脉冲   dataset中去除这种切片 √
+2  loss计算优化
+
+
+3 添加CELoss的版本

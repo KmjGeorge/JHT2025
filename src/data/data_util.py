@@ -3,6 +3,8 @@ import os
 import numpy as np
 import torch
 from os import path as osp
+
+from sklearn.manifold import TSNE
 from torch.nn import functional as F
 import h5py
 import pandas as pd
@@ -294,7 +296,7 @@ def draw_pdwtrain_with_label(pdw, save_path):
 
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=100)
+        plt.savefig(save_path, dpi=200)
         plt.close()
     else:
         plt.show()
@@ -313,14 +315,32 @@ def normalize_zscore(tensor):
     return (tensor - mean_) / std_
 
 
-def pdw_write(label, label_gt, data, save_img_path):
+def pdw_write(label, label_gt, data, out_feature, save_img_path, save_config):
     dir_name = os.path.abspath(os.path.dirname(save_img_path))
     os.makedirs(dir_name, exist_ok=True)
-    freqs, pws, pas, toas = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
-    pdwtrain = PDWTrain(freqs, pas, label, None, None, pws, toas)
-    pdwtrain_gt = PDWTrain(freqs, pas, label_gt, None, None, pws, toas)
-    draw_pdwtrain_with_label(pdwtrain, save_img_path)
-    draw_pdwtrain_with_label(pdwtrain_gt, save_img_path.replace('.png', '_gt.png'))
-    df1, df2 = pd.DataFrame(label), pd.DataFrame(label_gt)
-    df1.to_csv(save_img_path.replace('.png', '.csv'), index=True)
-    df2.to_csv(save_img_path.replace('.png', '_gt.csv'), index=True)
+
+    if save_config['save_pdwimg']:
+        freqs, pws, pas, toas = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
+        pdwtrain = PDWTrain(freqs, pas, label, None, None, pws, toas)
+        pdwtrain_gt = PDWTrain(freqs, pas, label_gt, None, None, pws, toas)
+        # save pdw visualization
+        draw_pdwtrain_with_label(pdwtrain, save_img_path)
+        draw_pdwtrain_with_label(pdwtrain_gt, save_img_path.replace('.png', '_gt.png'))
+
+    if save_config['save_featureTSNE']:
+        # save T-SNE visualization
+        tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=250)
+        feature_tsne = tsne.fit_transform(out_feature)
+        plt.figure(figsize=(6, 6))
+        plt.title('Output T-SNE')
+        plt.scatter(feature_tsne[:, 0], feature_tsne[:, 1], c=label_gt, s=0.1)
+        plt.xlabel('Demension 1')
+        plt.ylabel('Demension 2')
+        plt.savefig(save_img_path.replace('.png', '_feature.png'), dpi=200)
+        plt.close()
+
+    if save_config['save_label']:
+        # save label csv
+        df1, df2 = pd.DataFrame(label), pd.DataFrame(label_gt)
+        df1.to_csv(save_img_path.replace('.png', '.csv'), index=True)
+        df2.to_csv(save_img_path.replace('.png', '_gt.csv'), index=True)

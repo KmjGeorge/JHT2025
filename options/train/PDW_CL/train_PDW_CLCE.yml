@@ -48,12 +48,12 @@ network_g:
   bucket_size: 8
   n_hashes: 8
 
-#network_g:
-#  type: SimpleMLP
-#  seq_len: 3000
-#  c_in: 5
-#  c_out: 32
-#  d_model: 256
+network_d:
+  type: SimpleMLP
+  seq_len: 3000
+  c_in: 32
+  c_out: 10
+  d_model: 128
 
 # path
 path:
@@ -84,7 +84,10 @@ train:
     loss_weight: 1.0
     negative_mode: paired
     reduction: mean
-
+  seqce_opt:
+    type: SeqCELoss
+    loss_weight: !!float 1e-3
+    reduction: mean
 ### validation settings
 val:
   val_freq: !!float 1e4

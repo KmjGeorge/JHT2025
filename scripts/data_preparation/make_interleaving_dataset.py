@@ -132,7 +132,9 @@ def sliding_window_slice(tensor, stride, overlap):
 
     for start in start_indices:
         end = min(start + stride, length)
-        slices.append(tensor[start:end])
+        # 如果切片中只剩下一个脉冲，则不保留
+        if len(torch.unique(tensor[start:end][:, 5])) > 1:
+            slices.append(tensor[start:end])
 
     return slices
 
@@ -155,9 +157,9 @@ if __name__ == '__main__':
     save_path = r'F:\Datasets\JHT2025Pre\RandomMixed'
     save_figure_path = r'F:\Datasets\JHT2025Pre\MixedFigure'
     save_slice_path = r'F:\Datasets\JHT2025Pre\MixedAndClipped'
-    repeat_num = 10
+    repeat_num = 5
     missing_uprate = 0.2
-    clipping_stride = 3000
+    clipping_stride = 2000
     clipping_overlap = 0.2
     save_figure = False
 

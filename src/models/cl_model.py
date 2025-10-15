@@ -103,18 +103,23 @@ class CLModel(BaseModel):
 
                     mask = torch.zeros(N, dtype=torch.bool)   # 挑选属于该label的特征
                     mask[label_idx] = True
-                    feature = output[mask, :]           # N ,D       N为该类label的脉冲数
+                    feature = output[mask, :]           # N1 ,D       N1为该类label的脉冲数
 
                     # 在其内随机选择两个，分别为锚点和正样本
                     if feature.shape[0] < 2:      # 不足2个则跳过
                         continue
-                    label_cnt += 1
-                    anchor_idx, postive_idx = np.random.choice(np.arange(0, feature.shape[0]), 2, replace=False)
-                    anchor = feature[anchor_idx, :].unsqueeze(0)       # (1, D)
-                    positive = feature[postive_idx, :].unsqueeze(0)    # (1, D)
 
+                    label_cnt += 1
+                    anchor_idx, positive_idx = torch.randperm(feature.shape[0])[:2]
+                    anchor = feature[anchor_idx, :].unsqueeze(0)       # (1, D)
+                    positive = feature[positive_idx, :].unsqueeze(0)    # (1, D)
+
+                    # Nn = 10
                     # 其余均为负样本特征
-                    negative = output[~mask, :].unsqueeze(0)   # (1, N, D)
+                    negative = output[~mask, :]   # (N2, D)  N2为其他类的脉冲总数
+                    # negative_idx = torch.randperm(negative.shape[0])
+                    # negative = negative[negative_idx, :].unsqueeze(0)  # (1, Nn, D)   Nn为选择的负样本总数
+                    negative = negative.unsqueeze(0)
 
                     l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
                     l_cl_label_avg += l_cl
@@ -143,11 +148,11 @@ class CLModel(BaseModel):
             self.net_g.train()
 
 
-    def dist_validation(self, dataloader, current_iter, tb_logger, save_pdw):
+    def dist_validation(self, dataloader, current_iter, tb_logger, save_img):
         if self.opt['rank'] == 0:
-            self.nondist_validation(dataloader, current_iter, tb_logger, save_pdw)
+            self.nondist_validation(dataloader, current_iter, tb_logger, save_img)
 
-    def nondist_validation(self, dataloader, current_iter, tb_logger, save_pdw):
+    def nondist_validation(self, dataloader, current_iter, tb_logger, save_img):
         dataset_name = dataloader.dataset.opt['name']
         with_metrics = self.opt['val'].get('metrics') is not None
         use_pbar = self.opt['val'].get('pbar', False)
@@ -165,14 +170,15 @@ class CLModel(BaseModel):
         if use_pbar:
             pbar = tqdm(total=len(dataloader), unit='pulse')
 
-        clusterer = hdbscan.HDBSCAN(min_cluster_size=2)
+        clusterer = hdbscan.HDBSCAN(min_cluster_size=10)
 
         for idx, val_data in enumerate(dataloader):
             data_name = osp.splitext(osp.basename(val_data['data_path'][0]))[0]
             self.feed_data(val_data)
             self.test()
 
-            cluster_labels = clusterer.fit_predict(self.output.squeeze(0).detach().cpu().numpy())
+            out_fea = self.output.squeeze(0).detach().cpu().numpy()
+            cluster_labels = clusterer.fit_predict(out_fea)
             cluster_num = max(cluster_labels) + 1
             # 若存在标签为-1的离群点，将其视为一个新类
             if np.where(cluster_labels < 0):
@@ -180,7 +186,7 @@ class CLModel(BaseModel):
 
             metric_data['pred_labels'] = torch.from_numpy(cluster_labels)
             metric_data['true_labels'] = self.label.squeeze(0).detach().cpu()
-            if save_pdw:
+            if save_img['enable']:
                 if self.opt['is_train']:
                     save_img_path = osp.join(self.opt['path']['visualization'], data_name,
                                              f'{data_name}_iter{current_iter}.png')
@@ -192,7 +198,7 @@ class CLModel(BaseModel):
                         save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
                                                  f'{data_name}_{self.opt["name"]}.png')
                 pdw_write(metric_data['pred_labels'].numpy(), metric_data['true_labels'].numpy(),
-                          self.input_nonorm.squeeze(0).detach().cpu().numpy(), save_img_path)
+                          self.input_nonorm.squeeze(0).detach().cpu().numpy(), out_fea, save_img_path, save_img)
 
             if with_metrics:
                 # calculate metrics

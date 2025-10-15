@@ -5,7 +5,7 @@ from src.utils.registry import DATASET_REGISTRY
 import torch
 import os
 from torch.utils.data import DataLoader
-
+import torch.nn.functional as F
 
 @DATASET_REGISTRY.register()
 class DeinterleavingDataset(data.Dataset):
@@ -37,7 +37,11 @@ class DeinterleavingDataset(data.Dataset):
         pws = normalize_zscore(data[:, 1])
         pas = normalize_zscore(data[:, 2])
         toas = normalize_minmax(data[:, 3])
-        dtoa = normalize_zscore(data[:, 4])
+
+        # recaculate dtoa from normalized toas
+        # dtoa = normalize_minmax(data[:, 4])
+        dtoa = F.pad(torch.diff(toas), pad=(1, 0), value=0.)
+
         # print(freqs.shape, pws.shape, pas.shape, toas.shape, dtoa.shape)
         pdws = torch.stack([freqs, pws, pas, toas, dtoa], dim=1).float()  # (N, 5)   freq, pw ,pa, toa, dtoa
         labels = data[:, 5]
