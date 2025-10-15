@@ -48,7 +48,7 @@ network_g:
   n_hashes: 8
 
 network_h:
-  type: MLPClassifer
+  type: MLPClassifier
   c_in: 32
   n_classes: 15
   hidden_dim: 128
@@ -82,7 +82,7 @@ train:
   infonce_opt:
     type: InfoNCELoss
     loss_weight: 1.0
-    negative_mode: paired
+    negative_mode: unpaired
     reduction: mean
   seqce_opt:
     type: SeqCELoss
@@ -94,7 +94,7 @@ val:
   save_img:
     enable: true
     save_label: true
-    save_pdwimg: false
+    save_pdwimg: true
     save_featureTSNE: true
 
   metrics:

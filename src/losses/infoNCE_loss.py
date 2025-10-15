@@ -58,7 +58,6 @@ class InfoNCELoss(nn.Module):
         self.loss_weight = loss_weight
 
     def forward(self, query, positive_key, negative_keys=None):
-
         return info_nce(query, positive_key, negative_keys,
                         temperature=self.temperature,
                         reduction=self.reduction,
@@ -82,7 +81,8 @@ def info_nce(query, positive_key, negative_keys=None, temperature=0.1, reduction
         raise ValueError('<query> and <positive_key> must must have the same number of samples.')
     if negative_keys is not None:
         if negative_mode == 'paired' and len(query) != len(negative_keys):
-            raise ValueError("If negative_mode == 'paired', then <negative_keys> must have the same number of samples as <query>.")
+            raise ValueError(
+                "If negative_mode == 'paired', then <negative_keys> must have the same number of samples as <query>.")
 
     # Embedding vectors should have same number of components.
     if query.shape[-1] != positive_key.shape[-1]:
@@ -105,7 +105,8 @@ def info_nce(query, positive_key, negative_keys=None, temperature=0.1, reduction
 
         elif negative_mode == 'paired':
             query = query.unsqueeze(1)
-            negative_logits = query @ transpose(negative_keys)      # query : (B, D)  negative_keys (B, Num_Neg, D)  negative_logits  (B, D) @ (B D Num_Neg)
+            negative_logits = query @ transpose(
+                negative_keys)  # query : (B, 1, D)  negative_keys (B, Num_Neg, D)  negative_logits  (B, D) @ (B D Num_Neg) -> (B, N, Num_Neg)
             negative_logits = negative_logits.squeeze(1)
 
         # First index in last dimension are the positive samples
@@ -131,13 +132,16 @@ def normalize(*xs):
     return [None if x is None else F.normalize(x, dim=-1) for x in xs]
 
 
-
-
 if __name__ == '__main__':
+    torch.manual_seed(1234)
     loss = InfoNCELoss(negative_mode='unpaired')
     batch_size, num_negative, embedding_size = 32, 48, 128
     query = torch.randn(batch_size, embedding_size)
     positive_key = torch.randn(batch_size, embedding_size)
     negative_keys = torch.randn(num_negative, embedding_size)
+    print(negative_keys.shape, negative_keys)
+    negative_keys_2 = F.pad(negative_keys, (0, 0, 0, 1), value=0)
+    print(negative_keys_2.shape, negative_keys_2)
     output = loss(query, positive_key, negative_keys)
-    print(output)
+    output2 = loss(query, positive_key, negative_keys_2)
+    print(output, output2)

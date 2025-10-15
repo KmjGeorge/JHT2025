@@ -14,18 +14,24 @@ class SeqCELoss(nn.Module):
         self.reduction = reduction
         self.loss_weight = loss_weight
 
-    def forward(self, prob_trains, label_trains):  # logit_trains (B, N, C)  N: seq length  C: classnum   # label_trains  (B, N)
-        N = prob_trains.shape[1]
-        ce_per_point = 0
-        for i in range(N):
-            ce_per_point += F.cross_entropy(prob_trains[:, i, :], label_trains[:, i], reduction=self.reduction)
-        ce_for_seq = ce_per_point / N
-        return ce_for_seq * self.loss_weight
+    def forward(self, prob_trains,
+                label_trains):  # prob_trains (B, N, C)  N: seq length  C: classnum   # label_trains  (B, N)
+        B, N, C = prob_trains.shape
+        label_trains = label_trains.long()
+        return F.cross_entropy(prob_trains.view(B*N, C), label_trains.view(B*N), reduction=self.reduction)
 
 
 if __name__ == '__main__':
     loss = SeqCELoss()
-    logit_trains = F.softmax(torch.rand(size=(1, 1000, 5)), dim=2)
+    B = 4
+    N = 1000
+    C = 5
+    logit_trains = F.softmax(torch.rand(size=(B, N, C)), dim=2)
     print(logit_trains)
-    label_trains = torch.randint(low=0, high=4, size=(1, 1000))
+    label_trains = torch.randint(low=0, high=C - 1, size=(B, N))
     print(loss(logit_trains, label_trains).item())
+
+    logit_trains = logit_trains.view(B*N, C)
+    label_trains = label_trains.view(B*N)
+    print(logit_trains.shape, label_trains.shape)
+    print(F.cross_entropy(logit_trains, label_trains, reduction='mean').item())
