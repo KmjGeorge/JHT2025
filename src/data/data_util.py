@@ -329,11 +329,11 @@ def pdw_write(label, label_gt, data, out_feature, save_img_path, save_config):
 
     if save_config['save_featureTSNE']:
         # save T-SNE visualization
-        tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=250)
+        tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=500)
         feature_tsne = tsne.fit_transform(out_feature)
-        plt.figure(figsize=(6, 6))
+        plt.figure(figsize=(10, 6))
         plt.title('Output T-SNE')
-        plt.scatter(feature_tsne[:, 0], feature_tsne[:, 1], c=label_gt, s=0.1)
+        plt.scatter(feature_tsne[:, 0], feature_tsne[:, 1], c=label_gt, s=0.5)
         plt.xlabel('Demension 1')
         plt.ylabel('Demension 2')
         plt.savefig(save_img_path.replace('.png', '_feature.png'), dpi=200)
@@ -341,6 +341,8 @@ def pdw_write(label, label_gt, data, out_feature, save_img_path, save_config):
 
     if save_config['save_label']:
         # save label csv
-        df1, df2 = pd.DataFrame(label), pd.DataFrame(label_gt)
+        df1 = {'label': label}
+        df2 = {'label': label_gt}
+        df1, df2 = pd.DataFrame(df1), pd.DataFrame(df2)
         df1.to_csv(save_img_path.replace('.png', '.csv'), index=True)
         df2.to_csv(save_img_path.replace('.png', '_gt.csv'), index=True)
