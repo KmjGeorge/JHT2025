@@ -10,6 +10,10 @@ import h5py
 import pandas as pd
 from src.utils import img2tensor, scandir
 import matplotlib.pyplot as plt
+import matplotlib
+
+color_map = list(matplotlib.colors.CSS4_COLORS)
+np.random.shuffle(color_map)
 
 
 def paired_paths_from_folder(folders, keys, filename_tmpl):
@@ -328,14 +332,18 @@ def pdw_write(label, label_gt, data, out_feature, save_img_path, save_config):
         draw_pdwtrain_with_label(pdwtrain_gt, save_img_path.replace('.png', '_gt.png'))
 
     if save_config['save_featureTSNE']:
+
         # save T-SNE visualization
         tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=500)
         feature_tsne = tsne.fit_transform(out_feature)
         plt.figure(figsize=(10, 6))
         plt.title('Output T-SNE')
-        plt.scatter(feature_tsne[:, 0], feature_tsne[:, 1], c=label_gt, s=0.5)
+        for label in np.unique(label_gt):
+            feature_of_label = feature_tsne[label_gt == label, :]
+            plt.scatter(feature_of_label[:, 0], feature_of_label[:, 1], c=color_map[int(label)], s=0.5, label=str(label))
         plt.xlabel('Demension 1')
         plt.ylabel('Demension 2')
+        plt.legend(loc='lower right')
         plt.savefig(save_img_path.replace('.png', '_feature.png'), dpi=200)
         plt.close()
 
