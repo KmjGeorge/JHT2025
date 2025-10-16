@@ -1,12 +1,21 @@
 1、PDW Norm  √
 2、测试集 √
-3、metrics   ○
+3、metrics   √
 4、配套配置文件 √
-5、更好的Loss和网络架构
+5、更好的Loss和网络架构 ○
+   对于单脉冲序列，使用L1重构
+   对于交错脉冲序列，使用InfoNCE
+   辐射源个数较少时的增批问题（arXiv:2503.13476v1)
+   长序列训练
+
+   旋转位置编码
+
+6、AC NMI ARI实现确认 nan原因：有的切片只有一个脉冲   dataset中去除这种切片 √
+7、loss计算优化 √
+8、添加CELoss的版本 与原版对比
 
 
-1  AC NMI ARI实现确认 nan原因：有的切片只有一个脉冲   dataset中去除这种切片 √
-2  loss计算优化
 
 
-3 添加CELoss的版本
+anchor (B, 100, 32)
+negative (B, 1000, 32)
