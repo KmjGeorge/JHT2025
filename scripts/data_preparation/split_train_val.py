@@ -3,9 +3,13 @@ import shutil
 import numpy as np
 from tqdm import tqdm
 root = r'F:\Datasets\JHT2025Pre\MixedAndClipped'
-save_train_root = r'F:\Datasets\JHT2025Pre\train1015'
-save_val_root = r'F:\Datasets\JHT2025Pre\val1015'
+save_train_root = r'F:\Datasets\JHT2025Pre\train1016'
+save_val_root = r'F:\Datasets\JHT2025Pre\val1016'
 
+if not os.path.exists(save_train_root):
+    os.mkdir(save_train_root)
+if not os.path.exists(save_val_root):
+    os.mkdir(save_val_root)
 filenames_all = os.listdir(root)
 filenum = len(filenames_all)
 # val_num = int(filenum * 0.1)

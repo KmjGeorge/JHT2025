@@ -274,7 +274,7 @@ class CLModel(BaseModel):
                 cluster_labels[np.where(cluster_labels < 0)] = cluster_num + 1
 
             metric_data['pred_labels'] = torch.from_numpy(cluster_labels)
-            metric_data['true_labels'] = self.label.squeeze(0).detach().cpu()
+            metric_data['true_labels'] = self.label.squeeze(0).detach().cpu()   # (1, B, N)
             if save_img['enable']:
                 if self.opt['is_train']:
                     save_img_path = osp.join(self.opt['path']['visualization'], data_name,
@@ -288,6 +288,13 @@ class CLModel(BaseModel):
                                                  f'{data_name}_{self.opt["name"]}.png')
                 pdw_write(metric_data['pred_labels'].numpy(), metric_data['true_labels'].numpy(),
                           self.input_nonorm.squeeze(0).detach().cpu().numpy(), out_fea, save_img_path, save_img)
+
+            # tentative for out of GPU memory
+            del self.output
+            del self.label
+            del self.input
+            del self.input_nonorm
+            torch.cuda.empty_cache()
 
             if with_metrics:
                 # calculate metrics

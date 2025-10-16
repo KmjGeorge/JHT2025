@@ -12,8 +12,23 @@ from src.utils import img2tensor, scandir
 import matplotlib.pyplot as plt
 import matplotlib
 
-color_map = list(matplotlib.colors.CSS4_COLORS)
-np.random.shuffle(color_map)
+#
+# color_map_selected = []
+# for color in list(matplotlib.colors.CSS4_COLORS):
+#     if ('gray' in color) or ('white' in color) or ('black' in color):
+#         continue
+#     else:
+#         color_map_selected.append(color)
+# np.random.shuffle(color_map_selected)
+
+color_map_selected = [
+    'red', 'blue', 'green', 'orange', 'purple',
+    'cyan', 'magenta', 'lime', 'navy', 'gold',
+    'teal', 'crimson', 'indigo', 'olive', 'hotpink',
+    'darkorange', 'dodgerblue', 'forestgreen', 'darkviolet', 'sienna',
+    'deepskyblue', 'lawngreen', 'darkorchid', 'tomato', 'royalblue',
+    'yellowgreen', 'mediumvioletred', 'darkturquoise', 'orangered', 'mediumblue'
+]
 
 
 def paired_paths_from_folder(folders, keys, filename_tmpl):
@@ -283,24 +298,24 @@ def draw_pdwtrain_with_label(pdw, save_path):
     plt.subplot(221)
     plt.title('Freq')
     x = [i + 1 for i in range(len(pdw.Freqs))]
-    plt.scatter(x, pdw.Freqs, c=pdw.Labels, s=0.1)
+    plt.scatter(x, pdw.Freqs, c=pdw.Labels, s=0.3)
 
     plt.subplot(222)
     plt.title('DTOA(us)')
     dtoa = np.concatenate(([0], np.diff(pdw.TOAdots)))
-    plt.scatter(x, dtoa, c=pdw.Labels, s=0.1)
+    plt.scatter(x, dtoa, c=pdw.Labels, s=0.3)
 
     plt.subplot(223)
     plt.title('PW')
-    plt.scatter(x, pdw.PWs, c=pdw.Labels, s=0.1)
+    plt.scatter(x, pdw.PWs, c=pdw.Labels, s=0.3)
 
     plt.subplot(224)
     plt.title('PA')
-    plt.scatter(x, pdw.PAs, c=pdw.Labels, s=0.1)
+    plt.scatter(x, pdw.PAs, c=pdw.Labels, s=0.3)
 
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=200)
+        plt.savefig(save_path, dpi=300)
         plt.close()
     else:
         plt.show()
@@ -338,13 +353,13 @@ def pdw_write(label, label_gt, data, out_feature, save_img_path, save_config):
         feature_tsne = tsne.fit_transform(out_feature)
         plt.figure(figsize=(10, 6))
         plt.title('Output T-SNE')
-        for label in np.unique(label_gt):
-            feature_of_label = feature_tsne[label_gt == label, :]
-            plt.scatter(feature_of_label[:, 0], feature_of_label[:, 1], c=color_map[int(label)], s=0.5, label=str(label))
+        for lbl in np.unique(label_gt):
+            feature_of_label = feature_tsne[label_gt == lbl, :]
+            plt.scatter(feature_of_label[:, 0], feature_of_label[:, 1], c=color_map_selected[int(lbl)], s=0.5, label=str(int(lbl)))
         plt.xlabel('Demension 1')
         plt.ylabel('Demension 2')
         plt.legend(loc='lower right')
-        plt.savefig(save_img_path.replace('.png', '_feature.png'), dpi=200)
+        plt.savefig(save_img_path.replace('.png', '_feature.png'), dpi=300)
         plt.close()
 
     if save_config['save_label']:

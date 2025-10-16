@@ -91,9 +91,9 @@ val:
   val_freq: !!float 1e4
   save_img:
     enable: true
-    save_label: false
+    save_label: true
     save_pdwimg: false
-    save_featureTSNE: false
+    save_featureTSNE: true
 
   metrics:
     ac: # metric name, can be arbitrary

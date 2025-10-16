@@ -157,17 +157,17 @@ if __name__ == '__main__':
     save_path = r'F:\Datasets\JHT2025Pre\RandomMixed'
     save_figure_path = r'F:\Datasets\JHT2025Pre\MixedFigure'
     save_slice_path = r'F:\Datasets\JHT2025Pre\MixedAndClipped'
-    repeat_num = 5
+    repeat_num = [4, 4, 3, 2, 2, 1, 1, 1, 1]
     missing_uprate = 0.2
-    clipping_stride = 2000
+    clipping_stride = 1000
     clipping_overlap = 0.2
     save_figure = False
 
     interleaving = True
     clipping = True
     if interleaving:
-        for emitter_num in [2, 3, 4, 5, 6, 7, 8, 9, 10]:
-            for _ in tqdm(range(repeat_num)):
+        for i, emitter_num in enumerate([2, 3, 4, 5, 6, 7, 8, 9, 10]):
+            for _ in tqdm(range(repeat_num[i])):
                 merged, pdw_trains, info = random_interleaving(emitter_num=emitter_num, missing_uprate=missing_uprate,
                                                                path=root, return_single=True)
                 emitters = '+'.join(info['emitters'])

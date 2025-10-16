@@ -1,5 +1,5 @@
 # general settings
-name: 010_Deinterleaving_Reformer_CL_2to10_2k_allNeg_LossImpl3_wsl
+name: 011_Deinterleaving_Reformer_CL_2to10_1k_allNeg_LossImpl3_wsl
 model_type: CLModel
 num_gpu: 2
 manual_seed: 0
@@ -9,7 +9,7 @@ datasets:
   train:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: /mnt/f/Datasets/JHT2025Pre/train1015
+    dataroot: /mnt/f/Datasets/JHT2025Pre/train1016
     filename_tmpl: '{}'
     io_backend:
       type: disk
@@ -18,20 +18,20 @@ datasets:
     num_worker_per_gpu: 2
     batch_size_per_gpu: 4
     dataset_enlarge_ratio: 100
-    prefetch_mode: cuda
-    pin_memory: true
+    prefetch_mode: ~
+    # pin_memory: true
 
   val:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: /mnt/f/Datasets/JHT2025Pre/val1015
+    dataroot: /mnt/f/Datasets/JHT2025Pre/val1016
     io_backend:
       type: disk
 
 # network structures
 network_g:
   type: Reformer
-  seq_len: 2000
+  seq_len: 1000
   enc_in: 5
   d_model: 128
   c_out: 32
@@ -54,7 +54,7 @@ network_g:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state: ~
+  resume_state: ~ # /mnt/f/github/JHT2025/experiments/010_Deinterleaving_Reformer_CL_2to10_2k_allNeg_LossImpl3_wsl/training_states/30000.state
 
 # training settings
 train:
@@ -70,10 +70,10 @@ train:
 #    restart_weights: [1, 0.5, 0.5, 0.5]
 #    eta_min: !!float 1e-6
     type: MultiStepLR
-    milestones: [ 300000, 500000 ]
+    milestones: [150000]
     gamma: 0.5
 
-  total_iter: 500000
+  total_iter: 300000
   warmup_iter: -1  # no warm up
 
   # losses
