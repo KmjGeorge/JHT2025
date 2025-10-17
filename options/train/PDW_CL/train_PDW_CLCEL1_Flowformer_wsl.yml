@@ -1,7 +1,7 @@
 # general settings
-name: 005_Deinterleaving_Reformer_CLCE_2to10_2k_allNeg
+name: 022_Deinterleaving_Flowformer_CLCEL1_2to10_1k_allNeg_LossImpl3_wsl
 model_type: CLModel
-num_gpu: 1  # set num_gpu: 0 for cpu mode
+num_gpu: 2
 manual_seed: 0
 
 # dataset and data loader settings
@@ -9,29 +9,29 @@ datasets:
   train:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: F:/Datasets/JHT2025Pre/train1015
+    dataroot: /mnt/f/Datasets/JHT2025Pre/train1016
     filename_tmpl: '{}'
     io_backend:
       type: disk
 
     # data loader
-    num_worker_per_gpu: 4
+    num_worker_per_gpu: 2
     batch_size_per_gpu: 4
     dataset_enlarge_ratio: 100
-    prefetch_mode: cuda
-    pin_memory: true
+    prefetch_mode: ~
+    # pin_memory: true
 
   val:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: F:/Datasets/JHT2025Pre/val1015
+    dataroot: /mnt/f/Datasets/JHT2025Pre/val1016
     io_backend:
       type: disk
 
 # network structures
 network_g:
-  type: Reformer
-  seq_len: 2000
+  type: Flowformer
+  seq_len: 1000
   enc_in: 5
   d_model: 128
   c_out: 32
@@ -40,8 +40,6 @@ network_g:
   activation: relu
   dropout: 0.1
   e_layers: 8
-  bucket_size: 8
-  n_hashes: 8
 
 network_h:
   type: MLPClassifier
@@ -49,12 +47,16 @@ network_h:
   n_classes: 15
   hidden_dim: 128
 
+network_d:
+  type: MLPDecoder
+  c_in: 32
+  c_out: 4     # reconstruct [freqs, pws, pas, dtoa] without toas
+  hidden_dim: 256
+
 # path
 path:
   pretrain_network_g: ~
-  pretrain_network_h: ~
   strict_load_g: true
-  strict_load_h: true
   resume_state: ~
 
 # training settings
@@ -71,29 +73,37 @@ train:
 #    restart_weights: [1, 0.5, 0.5, 0.5]
 #    eta_min: !!float 1e-6
     type: MultiStepLR
-    milestones: [ 300000, 500000 ]
+    milestones: [150000]
     gamma: 0.5
 
-  total_iter: 400000
+  total_iter: 300000
   warmup_iter: -1  # no warm up
 
   # losses
   infonce_opt:
     type: InfoNCELoss
     loss_weight: 1.0
+    temperature: 0.1
     negative_mode: unpaired
     reduction: mean
+
   seqce_opt:
     type: SeqCELoss
     loss_weight: !!float 1e-2
     reduction: mean
+
+  recon_opt:
+    type: L1Loss
+    loss_weight: !!float 1e-2
+    reduction: mean
+
 ### validation settings
 val:
   val_freq: !!float 1e4
   save_img:
     enable: true
     save_label: true
-    save_pdwimg: true
+    save_pdwimg: false
     save_featureTSNE: true
 
   metrics:

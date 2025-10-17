@@ -2,7 +2,7 @@ import hdbscan
 from sklearn.datasets import make_blobs
 import matplotlib.pyplot as plt
 import numpy as np
-data, labels_gt = make_blobs(n_samples=100, n_features=32, centers=5)
+data, labels_gt = make_blobs(n_samples=1e6, n_features=32, centers=5)
 clusterer = hdbscan.HDBSCAN(min_cluster_size=10)
 cluster_labels = clusterer.fit_predict(data)
 print(cluster_labels)

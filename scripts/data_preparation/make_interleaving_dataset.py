@@ -67,10 +67,11 @@ def random_interleaving(emitter_num, missing_uprate, path, return_single=False):
 
         # 在允许范围内随机生成新中点
         T_i = random.uniform(T - delta_max, T + delta_max)
+
         offset = T_i - C_i
 
         # 应用偏移
-        pdw_train.TOAdots += offset
+        pdw_train.TOAdots += int(offset)
 
     merged_freq, merged_toa, merged_pw, merged_pa, merged_label, merged_tag_centerfreqs, merged_tag_samplerates = np.array(
         []), np.array([]), np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
@@ -86,6 +87,10 @@ def random_interleaving(emitter_num, missing_uprate, path, return_single=False):
     sorted_indices = sorted(range(len(merged_toa)), key=lambda i: merged_toa[i])
     sorted_freq = merged_freq[sorted_indices]
     sorted_toa = merged_toa[sorted_indices]
+    # 防止toa出现负值
+    toa_min = sorted_toa.min()
+    if toa_min < 0:
+        sorted_toa += abs(toa_min)
     sorted_pw = merged_pw[sorted_indices]
     sorted_pa = merged_pa[sorted_indices]
     sorted_label = merged_label[sorted_indices]
@@ -110,7 +115,6 @@ def make_clipping(path, save_path, stride=3000, overlap=0.2, n_thread=10):
 
 
 def sliding_window_slice(tensor, stride, overlap):
-
     if stride <= 0:
         raise ValueError("步长必须为正整数")
     if not (0 <= overlap < 1):
@@ -164,7 +168,7 @@ if __name__ == '__main__':
     save_figure = False
 
     interleaving = True
-    clipping = True
+    clipping = False
     if interleaving:
         for i, emitter_num in enumerate([2, 3, 4, 5, 6, 7, 8, 9, 10]):
             for _ in tqdm(range(repeat_num[i])):
@@ -180,10 +184,11 @@ if __name__ == '__main__':
                 labels = merged.Labels
 
                 input_data = torch.from_numpy(np.stack([freqs, pws, pas, toas, dtoa, labels], axis=1)).float()
-                torch.save(input_data, os.path.join(save_path, '{}_{}.pt').format(emitters, total_num))
+                torch.save(input_data, os.path.join(save_path, '{}_{}.pt').format(emitters, total_num))          # (N, 6)
                 if save_figure:
                     draw_pdwtrain(merged, os.path.join(save_figure_path, '{}_{}.png').format(emitters, total_num))
                     for emitter, missing_rate, pdw_train in zip(info['emitters'], info['missing_rates'], pdw_trains):
-                        draw_pdwtrain(pdw_train, os.path.join(save_figure_path, '{}_{:.3f}.png').format(emitter, missing_rate))
+                        draw_pdwtrain(pdw_train,
+                                      os.path.join(save_figure_path, '{}_{:.3f}.png').format(emitter, missing_rate))
     if clipping:
         make_clipping(save_path, save_slice_path, stride=clipping_stride, overlap=clipping_overlap, n_thread=4)

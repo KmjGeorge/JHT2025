@@ -1,3 +1,4 @@
+import numpy as np
 from torch.utils import data as data
 
 from src.data.data_util import normalize_zscore, normalize_minmax
@@ -24,12 +25,15 @@ class DeinterleavingDataset(data.Dataset):
         self.std = opt['std'] if 'std' in opt else None
         self.folder = opt['dataroot']
         self.filenames = os.listdir(self.folder)
+        self.use_flip = opt['use_flip'] if 'use_flip' in opt else False
 
     def __getitem__(self, index):
         filename = self.filenames[index]
         data_path = os.path.join(self.folder, filename)
         data = torch.load(data_path)
-
+        if self.use_flip:
+            if np.random.rand() < 0.5:
+                data = data.flip([0])
         # normalization internally each pdw train
         # for toa rescale to 0~1; for pw, pa, freq apply z-score
         pdws_nonorm = data[:, :-1]
@@ -44,7 +48,9 @@ class DeinterleavingDataset(data.Dataset):
 
         # print(freqs.shape, pws.shape, pas.shape, toas.shape, dtoa.shape)
         pdws = torch.stack([freqs, pws, pas, toas, dtoa], dim=1).float()  # (N, 5)   freq, pw ,pa, toa, dtoa
-        labels = data[:, 5]
+        labels = data[:, 5]  # (N, )
+
+
         return {'pdws': pdws, 'pdws_nonorm': pdws_nonorm, 'labels': labels, 'data_path': data_path}
 
     def __len__(self):
@@ -53,7 +59,6 @@ class DeinterleavingDataset(data.Dataset):
 
 if __name__ == '__main__':
     dataset = DeinterleavingDataset(opt={'dataroot': r'G:\datasets\2025金海豚初赛数据\分选\随机混合切片'})
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
-    for data in dataloader:
+    for data in dataset:
         print(data['pdws'].shape)
         print(data['labels'].shape)

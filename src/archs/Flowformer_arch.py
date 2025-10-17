@@ -1,8 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from src.archs.rope import RotaryEmbedding
 from src.utils.registry import ARCH_REGISTRY
 import math
+
 
 class TokenEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
@@ -18,6 +21,7 @@ class TokenEmbedding(nn.Module):
     def forward(self, x):
         x = self.tokenConv(x.permute(0, 2, 1)).transpose(1, 2)
         return x
+
 
 class PositionalEmbedding(nn.Module):
     def __init__(self, d_model, max_len=5000):
@@ -39,16 +43,21 @@ class PositionalEmbedding(nn.Module):
     def forward(self, x):
         return self.pe[:, :x.size(1)]
 
+
 class DataEmbedding(nn.Module):
-    def __init__(self, c_in, d_model, dropout=0.1):
+    def __init__(self, c_in, d_model, dropout=0.1, use_pe=False):
         super(DataEmbedding, self).__init__()
 
         self.value_embedding = TokenEmbedding(c_in=c_in, d_model=d_model)
-        self.position_embedding = PositionalEmbedding(d_model=d_model)
+        self.use_pe = use_pe
+        if self.use_pe:
+            self.position_embedding = PositionalEmbedding(d_model=d_model)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x):
-        x = self.value_embedding(x) + self.position_embedding(x)
+        x = self.value_embedding(x)
+        if self.use_pe:
+            x = x + self.position_embedding(x)
         return self.dropout(x)
 
 
@@ -73,7 +82,6 @@ class ConvLayer(nn.Module):
         return x
 
 
-
 class EncoderLayer(nn.Module):
     def __init__(self, attention, d_model, d_ff=None, dropout=0.1, activation="relu"):
         super(EncoderLayer, self).__init__()
@@ -86,9 +94,9 @@ class EncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.activation = F.relu if activation == "relu" else F.gelu
 
-    def forward(self, x, attn_mask=None, tau=None, delta=None):
+    def forward(self, x, freqs_cis=None, attn_mask=None, tau=None, delta=None):
         new_x, attn = self.attention(
-            x, x, x,
+            x, x, x, freqs_cis=freqs_cis,
             attn_mask=attn_mask,
             tau=tau, delta=delta
         )
@@ -108,7 +116,7 @@ class Encoder(nn.Module):
         self.conv_layers = nn.ModuleList(conv_layers) if conv_layers is not None else None
         self.norm = norm_layer
 
-    def forward(self, x, attn_mask=None, tau=None, delta=None):
+    def forward(self, x, freqs_cis=None, attn_mask=None, tau=None, delta=None):
         # x [B, L, D]
         attns = []
         if self.conv_layers is not None:
@@ -121,7 +129,7 @@ class Encoder(nn.Module):
             attns.append(attn)
         else:
             for attn_layer in self.attn_layers:
-                x, attn = attn_layer(x, attn_mask=attn_mask, tau=tau, delta=delta)
+                x, attn = attn_layer(x, freqs_cis=freqs_cis, attn_mask=attn_mask, tau=tau, delta=delta)
                 attns.append(attn)
 
         if self.norm is not None:
@@ -130,58 +138,6 @@ class Encoder(nn.Module):
         return x, attns
 
 
-class DecoderLayer(nn.Module):
-    def __init__(self, self_attention, cross_attention, d_model, d_ff=None,
-                 dropout=0.1, activation="relu"):
-        super(DecoderLayer, self).__init__()
-        d_ff = d_ff or 4 * d_model
-        self.self_attention = self_attention
-        self.cross_attention = cross_attention
-        self.conv1 = nn.Conv1d(in_channels=d_model, out_channels=d_ff, kernel_size=1)
-        self.conv2 = nn.Conv1d(in_channels=d_ff, out_channels=d_model, kernel_size=1)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.norm3 = nn.LayerNorm(d_model)
-        self.dropout = nn.Dropout(dropout)
-        self.activation = F.relu if activation == "relu" else F.gelu
-
-    def forward(self, x, cross, x_mask=None, cross_mask=None, tau=None, delta=None):
-        x = x + self.dropout(self.self_attention(
-            x, x, x,
-            attn_mask=x_mask,
-            tau=tau, delta=None
-        )[0])
-        x = self.norm1(x)
-
-        x = x + self.dropout(self.cross_attention(
-            x, cross, cross,
-            attn_mask=cross_mask,
-            tau=tau, delta=delta
-        )[0])
-
-        y = x = self.norm2(x)
-        y = self.dropout(self.activation(self.conv1(y.transpose(-1, 1))))
-        y = self.dropout(self.conv2(y).transpose(-1, 1))
-
-        return self.norm3(x + y)
-
-class Decoder(nn.Module):
-    def __init__(self, layers, norm_layer=None, projection=None):
-        super(Decoder, self).__init__()
-        self.layers = nn.ModuleList(layers)
-        self.norm = norm_layer
-        self.projection = projection
-
-    def forward(self, x, cross, x_mask=None, cross_mask=None, tau=None, delta=None):
-        for layer in self.layers:
-            x = layer(x, cross, x_mask=x_mask, cross_mask=cross_mask, tau=tau, delta=delta)
-
-        if self.norm is not None:
-            x = self.norm(x)
-
-        if self.projection is not None:
-            x = self.projection(x)
-        return x
 class AttentionLayer(nn.Module):
     def __init__(self, attention, d_model, n_heads, d_keys=None,
                  d_values=None):
@@ -197,13 +153,18 @@ class AttentionLayer(nn.Module):
         self.out_projection = nn.Linear(d_values * n_heads, d_model)
         self.n_heads = n_heads
 
-    def forward(self, queries, keys, values, attn_mask, tau=None, delta=None):
+    def forward(self, queries, keys, values, freqs_cis=None, attn_mask=None, tau=None, delta=None):
         B, L, _ = queries.shape
         _, S, _ = keys.shape
         H = self.n_heads
 
         queries = self.query_projection(queries).view(B, L, H, -1)
         keys = self.key_projection(keys).view(B, S, H, -1)
+
+        # apply RoPE
+        if freqs_cis is not None:
+            queries, keys = apply_rotary_emb(queries, keys, freqs_cis=freqs_cis)
+
         values = self.value_projection(values).view(B, S, H, -1)
 
         out, attn = self.inner_attention(
@@ -241,6 +202,145 @@ class FullAttention(nn.Module):
         else:
             return (V.contiguous(), None)
 
+
+def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 10000.0):
+    """为RoPE预计算旋转矩阵 """
+    # 计算词向量元素两两分组之后，每组元素对应的旋转角度
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    # 生成 token 序列索引 t = [0, 1,..., seq_len-1]
+    t = torch.arange(seq_len, device=freqs.device)
+    # freqs.shape = [seq_len, dim // 2]
+    freqs = torch.outer(t, freqs).float()
+    # torch.polar 的文档
+    # https://pytorch.org/docs/stable/generated/torch.polar.html
+    # 计算结果是个复数向量
+    # 假设 freqs = [x, y]
+    # 则 freqs_cis = [cos(x) + sin(x)i, cos(y) + sin(y)i]
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
+    return freqs_cis
+
+
+def apply_rotary_emb(xq, xk, freqs_cis):  # xq [batch_size, seq_len, head, dim // head]
+    """ 应用RoPE """
+    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
+    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
+    # print(freqs_cis.shape)
+    def reshape_for_broadcast(freqs_cis, x):
+        ndim = x.ndim
+        assert 0 <= 1 < ndim
+        assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+        shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+        return freqs_cis.view(*shape)
+
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
+    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
+    return xq_out.type_as(xq), xk_out.type_as(xk)
+
+
+class SymmetricT5RelativeBias(nn.Module):
+    """基于T5的相对位置编码的对称版本"""
+    def __init__(self, num_heads, num_buckets=32, max_distance=128):
+        super().__init__()
+        self.num_heads = num_heads
+        self.num_buckets = num_buckets
+        self.max_distance = max_distance
+
+        # 相对位置偏置参数
+        self.relative_attention_bias = nn.Embedding(num_buckets, num_heads)
+
+    def _relative_position_bucket(self, relative_position):
+        """将相对位置映射到桶中（对称版本）"""
+        relative_position = torch.abs(relative_position)  # 关键：使用绝对值确保对称
+
+        # 近距离使用精细分桶，远距离使用粗糙分桶
+        max_exact = self.num_buckets // 2
+        is_small = relative_position < max_exact
+
+        # 大距离使用对数分桶
+        relative_position_if_large = max_exact + (
+                torch.log(relative_position.float() / max_exact) /
+                math.log(self.max_distance / max_exact) * (self.num_buckets - max_exact)
+        ).long()
+
+        relative_position_if_large = torch.minimum(
+            relative_position_if_large,
+            torch.full_like(relative_position_if_large, self.num_buckets - 1)
+        )
+
+        return torch.where(is_small, relative_position, relative_position_if_large)
+
+    def forward(self, seq_len):
+        """生成对称相对位置偏置"""
+        context_pos = torch.arange(seq_len, dtype=torch.long)[:, None]
+        memory_pos = torch.arange(seq_len, dtype=torch.long)[None, :]
+        relative_pos = memory_pos - context_pos
+
+        # 使用绝对值确保对称性
+        relative_pos = torch.abs(relative_pos)
+
+        # 分桶
+        rp_bucket = self._relative_position_bucket(relative_pos)
+
+        # 获取偏置
+        values = self.relative_attention_bias(rp_bucket)  # [seq_len, seq_len, num_heads]
+        values = values.permute(2, 0, 1).unsqueeze(0)  # [1, num_heads, seq_len, seq_len]
+
+        return values
+
+
+class BidirectionalALiBi(nn.Module):
+    """
+    双向ALiBi位置编码
+    特点：
+    1. 基于距离的线性偏置（ALiBi核心思想）
+    2. 使用绝对距离确保双向对称性
+    3. 支持任意长度序列外推
+    """
+
+    def __init__(self, num_heads, max_slope=1.0, min_slope=0.01):
+        """
+        初始化双向ALiBi
+
+        参数:
+            num_heads: 注意力头的数量
+            max_slope: 最大斜率值（最近距离）
+            min_slope: 最小斜率值（最远距离）
+        """
+        super().__init__()
+        self.num_heads = num_heads
+
+        # 为每个头生成不同的斜率（几何序列）
+        slopes = torch.tensor(
+            [min_slope * (max_slope / min_slope) ** (i / (num_heads - 1))
+             for i in range(num_heads)]
+        )
+        self.register_buffer('slopes', slopes)
+
+        # 斜率参数（可学习）
+        self.slope_params = nn.Parameter(torch.ones(num_heads))
+
+    def forward(self, seq_len):
+        """
+        生成双向ALiBi位置偏置矩阵
+
+        返回:
+            bias: 位置偏置矩阵，形状为 [1, num_heads, seq_len, seq_len]
+        """
+        # 创建位置索引
+        pos = torch.arange(seq_len, dtype=torch.float)
+
+        # 计算绝对距离矩阵 |i - j|
+        # 使用绝对距离确保双向对称性
+        distance = torch.abs(pos[:, None] - pos[None, :])
+
+        # 计算偏置矩阵
+        # 使用广播机制为每个头应用不同的斜率
+        slopes = self.slopes * self.slope_params
+        bias = -slopes.view(1, -1, 1, 1) * distance
+
+        # 调整维度顺序 [1, num_heads, seq_len, seq_len]
+        return bias.permute(1, 0, 2).unsqueeze(0)
 class FlowAttention(nn.Module):
     def __init__(self, attention_dropout=0.1):
         super(FlowAttention, self).__init__()
@@ -253,6 +353,7 @@ class FlowAttention(nn.Module):
         queries = queries.transpose(1, 2)
         keys = keys.transpose(1, 2)
         values = values.transpose(1, 2)
+
         # kernel
         queries = self.kernel_method(queries)
         keys = self.kernel_method(keys)
@@ -275,21 +376,35 @@ class FlowAttention(nn.Module):
         return x, None
 
 
+
 @ARCH_REGISTRY.register()
 class Flowformer(nn.Module):
     """
     modified from https://github.com/thuml/Flowformer
+
+    pe_mode (str) : optional 'Symmetric_Relative', 'Bidirectional_ALiBi', 'RoPE' or 'Absolute'
     """
 
-    def __init__(self, seq_len, enc_in, c_out, d_model, dropout, n_heads, d_ff, activation, e_layers):
+    def __init__(self, seq_len, enc_in, c_out, d_model, dropout, n_heads, d_ff, activation, e_layers, pe_mode='ALiBi'):
         super(Flowformer, self).__init__()
         self.pred_len = seq_len
 
         self.enc_in = enc_in
         self.c_out = c_out
+        self.pe_mode = pe_mode
 
-        # Embedding
-        self.enc_embedding = DataEmbedding(self.enc_in, d_model, dropout)
+        if self.pe_mode == 'Absolute':
+            self.enc_embedding = DataEmbedding(self.enc_in, d_model, dropout, True)
+        else:
+            self.enc_embedding = DataEmbedding(self.enc_in, d_model, dropout, False)
+            # if self.pe_mode == 'Symmetric_Relative':
+            #     self.pos_encoder = SymmetricT5RelativeBias(num_heads)
+            # elif self.pe_mode == 'Bidirectional_ALiBi':
+            #     self.pos_encoder = BidirectionalALiBI(num_heads)
+            if self.pe_mode == 'RoPE':
+                # self.rope = RotaryEmbedding(dim=d_model // n_heads, freqs_for='lang', learned_freq=True, cache_if_possible=True, cache_max_seq_len=seq_len * 4)
+                self.freqs_cis = precompute_freqs_cis(d_model // n_heads, seq_len * 2)
+
         # Encoder
         self.encoder = Encoder(
             [
@@ -310,36 +425,43 @@ class Flowformer(nn.Module):
             d_model, c_out, bias=True)
 
     def forecast(self, x_enc):
+        seq_len = x_enc.shape[1]
         # Embedding
         enc_out = self.enc_embedding(x_enc)
-        enc_out, attns = self.encoder(enc_out, attn_mask=None)
+        if self.pe_mode == 'RoPE':
+            self.freqs_cis = self.freqs_cis.to(x_enc.device)
+            freqs_cis = self.freqs_cis[: seq_len]
+        else:
+            freqs_cis = None
+        enc_out, attns = self.encoder(enc_out, freqs_cis, attn_mask=None)
 
         dec_out = self.projection(enc_out)
         return dec_out
 
-
     def forward(self, x_enc):
+
         dec_out = self.forecast(x_enc)
         return dec_out[:, -self.pred_len:, :]  # [B, L, D]
 
 
-
-
 if __name__ == '__main__':
-    model = Flowformer(seq_len=5000,
-                     enc_in=5,
-                     d_model=128,
-                     c_out=32,
-                     n_heads=8,
-                     d_ff=256,
-                     activation='relu',
-                     dropout=0.1,
-                     e_layers=8).cuda()
+    model = Flowformer(seq_len=50000,
+                       enc_in=5,
+                       d_model=256,
+                       c_out=64,
+                       n_heads=8,
+                       d_ff=512,
+                       activation='relu',
+                       dropout=0.1,
+                       e_layers=8,
+                       pe_mode='RoPE').cuda()
     # x = torch.randn(8, 100, 3)
     # y = model(x)
     # print(y.shape)
     from torchsummary import summary
-    # for i in range(1000):
-    #     x = torch.randn(4, 5000, 5).cuda()
-    #     y = model(x)
-    summary(model, input_data=torch.rand(4, 5000, 5))
+
+    for i in range(1000):
+        x = torch.randn(1, 30000, 5).cuda()
+        y = model(x)
+    # summary(model, input_data=torch.rand(4, 1500, 5))
+

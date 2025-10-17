@@ -166,6 +166,7 @@ class PDWTrain:
         self.missing_rate = missing_rate
         if IntraPulse is not None:
             self.IntraPulse = IntraPulse
+        self.update_dtoa()
 
     #  获取数据范围
     def get_data_range(self):
@@ -213,11 +214,11 @@ class PDWTrain:
         return len(self.TOAdots)
 
     def update_dtoa(self):
-        self.DTOA = np.concatenate([[0], np.diff(self.TOAdots)], axis=0)
+        self.DTOA = np.pad(np.diff(self.TOAdots), (1,0), mode='constant', constant_values=0)
         return self.DTOA
 
 
-def read_pdw(path):
+def read_pdw(path, metric='us'):
     label_map = {'1111': 0,
                  '1112': 1,
                  '1121': 2,
@@ -255,7 +256,11 @@ def read_pdw(path):
 
         PWdots = np.array(f['InterPulse']['PWdot']).squeeze()
         PWs = PWdots / Tag_SampleRates  # us
-        TOAdots = np.array(f['InterPulse']['TOAdot']).squeeze() / 1e3  # ns -> us
+        if metric == 'ns':
+            PWs *= 1e3
+        TOAdots = np.array(f['InterPulse']['TOAdot'], dtype=np.float64).squeeze()  # ns
+        if metric == 'us':
+            TOAdots /= 1e3
         try:
             IntraPulse = np.array(f['IntraPulse']['DATA']).squeeze()
             pdwtrain = PDWTrain(Freqs, PAs, Labels, Tag_CenterFreqs, Tag_SampleRates, PWs, TOAdots, IntraPulse)
@@ -298,20 +303,20 @@ def draw_pdwtrain_with_label(pdw, save_path):
     plt.subplot(221)
     plt.title('Freq')
     x = [i + 1 for i in range(len(pdw.Freqs))]
-    plt.scatter(x, pdw.Freqs, c=pdw.Labels, s=0.3)
+    plt.scatter(x, pdw.Freqs, c=pdw.Labels, s=0.5)
 
     plt.subplot(222)
     plt.title('DTOA(us)')
     dtoa = np.concatenate(([0], np.diff(pdw.TOAdots)))
-    plt.scatter(x, dtoa, c=pdw.Labels, s=0.3)
+    plt.scatter(x, dtoa, c=pdw.Labels, s=0.5)
 
     plt.subplot(223)
     plt.title('PW')
-    plt.scatter(x, pdw.PWs, c=pdw.Labels, s=0.3)
+    plt.scatter(x, pdw.PWs, c=pdw.Labels, s=0.5)
 
     plt.subplot(224)
     plt.title('PA')
-    plt.scatter(x, pdw.PAs, c=pdw.Labels, s=0.3)
+    plt.scatter(x, pdw.PAs, c=pdw.Labels, s=0.5)
 
     plt.tight_layout()
     if save_path:
