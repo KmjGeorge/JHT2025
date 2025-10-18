@@ -126,7 +126,6 @@ class CLModel(BaseModel):
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
         self.output = self.net_g(self.input)   # B, L, D
-        B, N, D = self.output.shape
 
         l_total = 0
         loss_dict = OrderedDict()
@@ -137,117 +136,21 @@ class CLModel(BaseModel):
                 l_recon = self.cri_recon(recon, self.input[:, (1, 2, 4)])
                 l_total += l_recon
                 loss_dict['l_Recon'] = l_recon
-
         else:
             if self.cri_recon:
                 l_recon = 0
                 loss_dict['l_Recon'] = l_recon
+
             if self.cri_infonce:
-                l_cl_batch_avg = 0
-                for output, label in zip(self.output, self.label):      # for batch
-                    label_unique, counts = torch.unique(label, return_counts=True)  # 所有label种类
-                    label_cnt = 0
-                    l_cl_label_avg = 0
-
-                    for label_elem, count in zip(label_unique, counts):     # 对每种label，随机挑选出一个样本作为锚点，另一个作为正样本，并把其他label的特征作为负样本
-                        # 过滤样本数少于2的标签的样本
-                        if count < 2:
-                            continue
-                        label_cnt += 1
-
-                        mask = (label == label_elem)
-                        feature = output[label == label_elem]  # (N1, D)  N1为该类的脉冲总数
-
-                        shuffle_idx = torch.randperm(feature.shape[0])   # 将该类的样本随机平均切分，一半为锚点，另一半为正样本
-                        mid = len(shuffle_idx) // 2
-                        anchor_idx, positive_idx = shuffle_idx[:mid], shuffle_idx[mid:2*mid]
-                        anchor = feature[anchor_idx, :]        # (N1 // 2, D)
-                        positive = feature[positive_idx, :]    # (N1 // 2, D)
-
-                        negative = output[~mask, :]  # (N2, D)  N2为其他类的脉冲总数    此时InfoNCE应为unpaired模式
-
-                        l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
-                        l_cl_label_avg += l_cl
-                    l_cl_label_avg /= label_cnt
-                    l_cl_batch_avg += l_cl_label_avg
-                l_cl_batch_avg /= B
-                l_total += l_cl_batch_avg
-                loss_dict['l_InfoNCE'] = l_cl_batch_avg
-            '''
-            if self.cri_infonce:
-                # 展平处理 (B*N, D) 和 (B*N)
-                output_flat = self.output.reshape(B * N, D)
-                label_flat = self.label.reshape(B * N)
-    
-                # 创建有效样本掩码（至少有两个同类样本）
-                unique_labels, counts = torch.unique(label_flat, return_counts=True)
-                valid_mask = torch.isin(label_flat, unique_labels[counts >= 2])
-    
-                # 过滤无效样本
-                valid_output = output_flat[valid_mask]
-                valid_label = label_flat[valid_mask]
-    
-                # 为每个有效样本创建同类索引映射
-                label_to_indices = {}
-                for i, lbl in enumerate(unique_labels):
-                    if counts[i] >= 2:
-                        label_to_indices[lbl] = torch.where(valid_label == lbl)[0]
-    
-                # 准备锚点、正样本和负样本列表，每个类1个锚点、1个正样本，k个负样本
-                anchors = []
-                positives = []
-                negatives_list = []
-                neg_samples = 100
-    
-                # 处理每个有效类别
-                for lbl, indices in label_to_indices.items():
-                    # 随机选择两个不同的样本作为锚点和正样本
-                    anchor_idx, positive_idx = torch.randperm(len(indices))[:2]
-    
-                    anchors.append(valid_output[anchor_idx])
-                    positives.append(valid_output[positive_idx])
-    
-                    # 获取负样本（排除同类样本）
-                    same_class_mask = (valid_label == lbl)
-                    negative_candidates = valid_output[~same_class_mask]
-    
-                    # # 采样固定数量的负样本
-                    # if len(negative_candidates) > neg_samples:
-                    #     perm = torch.randperm(len(negative_candidates))[:neg_samples]
-                    #     negatives = negative_candidates[perm]
-                    # else:
-                    #     negatives = negative_candidates
-                    # 采样所有负样本
-                    negatives = negative_candidates
-                    negatives_list.append(negatives)
-    
-                # 转换为张量
-                anchors = torch.stack(anchors)  # (P, D)
-                positives = torch.stack(positives)  # (P, D)
-    
-                # 处理负样本使其形状一致 (P, Nn, D)
-                max_neg = max(len(neg) for neg in negatives_list)
-                negatives_tensor = torch.zeros(len(anchors), max_neg, D, device=self.device)
-    
-                for i, neg in enumerate(negatives_list):
-                    negatives_tensor[i, :len(neg)] = neg
-    
-                # 使用cri_infonce计算损失
-                l_infonce = self.cri_infonce(
-                    query=anchors,
-                    positive_key=positives,
-                    negative_keys=negatives_tensor
-                )
-                l_total += l_infonce
-                loss_dict['l_InfoNCE'] = l_infonce
-            '''
+                l_cl = self._calculate_contrastive_loss()
+                l_total += l_cl
+                loss_dict['l_InfoNCE'] = l_cl
 
             if self.cri_seqce:
                 pred_logits = self.net_h(self.output)
                 l_seqce = self.cri_seqce(pred_logits, self.label)
                 l_total += l_seqce
                 loss_dict['l_SeqCE'] = l_seqce
-
 
         l_total.backward()
         self.optimizer_g.step()
@@ -267,8 +170,6 @@ class CLModel(BaseModel):
             with torch.no_grad():
                 self.output = self.net_g(self.input)
             self.net_g.train()
-
-
 
     def dist_validation(self, dataloader, current_iter, tb_logger, save_img):
         if self.opt['rank'] == 0:
@@ -372,3 +273,175 @@ class CLModel(BaseModel):
         if self.net_d is not None:
             self.save_network(self.net_d, 'net_d', current_iter)
         self.save_training_state(epoch, current_iter)
+
+    def _calculate_contrastive_loss(self):
+        B, N, D = self.output.shape
+        l_cl_batch_avg = 0
+        for output, label in zip(self.output, self.label):  # for batch
+            label_unique, counts = torch.unique(label, return_counts=True)  # 所有label种类
+            label_cnt = 0
+            l_cl_label_avg = 0
+
+            for label_elem, count in zip(label_unique, counts):  # 对每种label，随机挑选出一个样本作为锚点，另一个作为正样本，并把其他label的特征作为负样本
+                # 过滤样本数少于2的标签的样本
+                if count < 2:
+                    continue
+                label_cnt += 1
+
+                mask = (label == label_elem)
+                feature = output[label == label_elem]  # (N1, D)  N1为该类的脉冲总数
+
+                shuffle_idx = torch.randperm(feature.shape[0])  # 将该类的样本随机平均切分，一半为锚点，另一半为正样本
+                mid = len(shuffle_idx) // 2
+                anchor_idx, positive_idx = shuffle_idx[:mid], shuffle_idx[mid:2 * mid]
+                anchor = feature[anchor_idx, :]  # (N1 // 2, D)
+                positive = feature[positive_idx, :]  # (N1 // 2, D)
+
+                negative = output[~mask, :]  # (N2, D)  N2为其他类的脉冲总数    此时InfoNCE应为unpaired模式
+
+                l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
+                l_cl_label_avg += l_cl
+            l_cl_label_avg /= label_cnt
+            l_cl_batch_avg += l_cl_label_avg
+        l_cl_batch_avg /= B
+
+        return l_cl_batch_avg
+
+    def _calculate_contrastive_loss_2(self):
+        '''
+        B, N, D = self.output.shape
+        # 展平处理 (B*N, D) 和 (B*N)
+        output_flat = self.output.reshape(B * N, D)
+        label_flat = self.label.reshape(B * N)
+
+        # 创建有效样本掩码（至少有两个同类样本）
+        unique_labels, counts = torch.unique(label_flat, return_counts=True)
+        valid_mask = torch.isin(label_flat, unique_labels[counts >= 2])
+
+        # 过滤无效样本
+        valid_output = output_flat[valid_mask]
+        valid_label = label_flat[valid_mask]
+
+        # 为每个有效样本创建同类索引映射
+        label_to_indices = {}
+        for i, lbl in enumerate(unique_labels):
+           if counts[i] >= 2:
+               label_to_indices[lbl] = torch.where(valid_label == lbl)[0]
+
+        # 准备锚点、正样本和负样本列表，每个类1个锚点、1个正样本，k个负样本
+        anchors = []
+        positives = []
+        negatives_list = []
+        # neg_samples = 100
+
+        # 处理每个有效类别
+        for lbl, indices in label_to_indices.items():
+           # 随机选择两个不同的样本作为锚点和正样本
+           anchor_idx, positive_idx = torch.randperm(len(indices))[:2]
+
+           anchors.append(valid_output[anchor_idx])
+           positives.append(valid_output[positive_idx])
+
+           # 获取负样本（排除同类样本）
+           same_class_mask = (valid_label == lbl)
+           negative_candidates = valid_output[~same_class_mask]
+
+           # # 采样固定数量的负样本
+           # if len(negative_candidates) > neg_samples:
+           #     perm = torch.randperm(len(negative_candidates))[:neg_samples]
+           #     negatives = negative_candidates[perm]
+           # else:
+           #     negatives = negative_candidates
+           # 采样所有负样本
+           negatives = negative_candidates
+           negatives_list.append(negatives)
+
+        # 转换为张量
+        anchors = torch.stack(anchors)  # (P, D)
+        positives = torch.stack(positives)  # (P, D)
+
+        # 处理负样本使其形状一致 (P, Nn, D)
+        max_neg = max(len(neg) for neg in negatives_list)
+        negatives_tensor = torch.zeros(len(anchors), max_neg, D, device=self.device)
+
+        for i, neg in enumerate(negatives_list):
+           negatives_tensor[i, :len(neg)] = neg
+
+        # 使用cri_infonce计算损失
+        l_infonce = self.cri_infonce(
+           query=anchors,
+           positive_key=positives,
+           negative_keys=negatives_tensor
+        )
+        return l_infonce
+        '''
+        B, N, D = self.output.shape
+        output = self.output.reshape(B * N, D)
+        label = self.label.reshape(B * N)
+
+        label_unique, counts = torch.unique(label, return_counts=True)  # 所有label种类
+        label_cnt = 0
+        l_cl_label_avg = 0
+        for label_elem, count in zip(label_unique, counts):  # 对每种label，随机挑选出一个样本作为锚点，另一个作为正样本，并把其他label的特征作为负样本
+            # 过滤样本数少于2的标签的样本
+            if count < 2:
+                continue
+            label_cnt += 1
+
+            mask = (label == label_elem)
+            feature = output[label == label_elem]  # (N1, D)  N1为该类的脉冲总数
+
+            shuffle_idx = torch.randperm(feature.shape[0])  # 将该类的样本随机平均切分，一半为锚点，另一半为正样本
+            mid = len(shuffle_idx) // 2
+            anchor_idx, positive_idx = shuffle_idx[:mid], shuffle_idx[mid:2 * mid]
+            anchor = feature[anchor_idx, :]  # (N1 // 2, D)
+            positive = feature[positive_idx, :]  # (N1 // 2, D)
+
+            negative = output[~mask, :]  # (N2, D)  N2为其他类的脉冲总数    此时InfoNCE应为unpaired模式
+
+            l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
+            l_cl_label_avg += l_cl
+        l_cl_label_avg /= label_cnt
+
+        return l_cl_label_avg
+
+
+
+    def _calculate_contrastive_loss_segment(self):
+        """
+        对于每个类别，构建一个全局平均特征，对比学习在点与平均特征上进行
+        """
+        B, N, D = self.output.shape
+        output = self.output.reshape(B * N, D)
+        label = self.label.reshape(B * N)
+
+        label_unique, counts = torch.unique(label, return_counts=True)  # 所有label种类
+        label_cnt = 0
+        l_cl_label_avg = 0
+
+        features_of_label = {}
+        features_of_label_mean = {}
+        for label_elem, count in zip(label_unique, counts):  # 对每种label，随机挑选出一个样本作为锚点，平均特征作为正样本，并把其他label的平均特征作为负样本
+            # 过滤样本数少于2的标签的样本
+            if count < 2:
+                continue
+            label_cnt += 1
+            feature = output[label == label_elem]  # (N1, D)  N1为该类的脉冲总数
+            features_of_label[label_elem] = feature
+            features_of_label_mean[label_elem] = feature.mean(dim=0)
+
+        for label_elem, count in zip(label_unique, counts):
+            if count < 2:
+                continue
+            feature = features_of_label[label_elem]
+            anchor_idx = torch.randperm(feature.shape[0])[0]  # 随机取出一个为锚点
+            anchor = feature[anchor_idx, :]  # (1, D)
+            positive = features_of_label_mean[label_elem]
+
+            negative = torch.stack([value for key, value in features_of_label_mean.items() if key != label_elem], dim=0)
+
+            l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
+            l_cl_label_avg += l_cl
+        l_cl_label_avg /= label_cnt
+
+        return l_cl_label_avg
