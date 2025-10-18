@@ -12,6 +12,7 @@ from src.utils.registry import MODEL_REGISTRY
 from src.models.base_model import BaseModel
 from src.data.data_util import pdw_write
 
+
 @MODEL_REGISTRY.register()
 class CLModel(BaseModel):
     """Base SR model for single image super-resolution."""
@@ -25,19 +26,18 @@ class CLModel(BaseModel):
         self.print_network(self.net_g)
 
         try:
-            self.net_h = build_network(self.opt['network_h'])          # 分类头，直接预测标签并计算CELoss
+            self.net_h = build_network(self.opt['network_h'])  # 分类头，直接预测标签并计算CELoss
             self.net_h = self.model_to_device(self.net_h)
             self.print_network(self.net_h)
         except:
             self.net_h = None
 
         try:
-            self.net_d = build_network(self.opt['network_d'])          # 重建头，重构输入并计算L1
+            self.net_d = build_network(self.opt['network_d'])  # 重建头，重构输入并计算L1
             self.net_d = self.model_to_device(self.net_d)
             self.print_network(self.net_d)
         except:
             self.net_d = None
-
 
         # load pretrained models
         load_path = self.opt['path'].get('pretrain_network_g', None)
@@ -46,7 +46,7 @@ class CLModel(BaseModel):
             self.load_network(self.net_g, load_path, self.opt['path'].get('strict_load_g', True), param_key)
 
         load_path_h = self.opt['path'].get('pretrain_network_h', None)
-        if load_path_h  is not None:
+        if load_path_h is not None:
             param_key = self.opt['path'].get('param_key_h', 'params')
             self.load_network(self.net_h, load_path_h, self.opt['path'].get('strict_load_h', True), param_key)
 
@@ -62,7 +62,7 @@ class CLModel(BaseModel):
         self.net_g.train()
         if self.net_h is not None:
             self.net_h.train()
-        if self.net_d  is not None:
+        if self.net_d is not None:
             self.net_d.train()
 
         train_opt = self.opt['train']
@@ -117,15 +117,14 @@ class CLModel(BaseModel):
         self.optimizer_g = self.get_optimizer(optim_type, optim_params, **train_opt['optim_g'])
         self.optimizers.append(self.optimizer_g)
 
-
     def feed_data(self, data):
-        self.input = data['pdws'].to(self.device)   # (B, N, 5)
-        self.label = data['labels'].to(self.device) # (B, N)
+        self.input = data['pdws'].to(self.device)  # (B, N, 5)
+        self.label = data['labels'].to(self.device)  # (B, N)
         self.input_nonorm = data['pdws_nonorm']
 
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
-        self.output = self.net_g(self.input)   # B, L, D
+        self.output = self.net_g(self.input)  # B, L, D
         B, N, D = self.output.shape
 
         l_total = 0
@@ -133,7 +132,7 @@ class CLModel(BaseModel):
 
         if len(torch.unique(self.label)) == 1:  # 仅为单一脉冲时使用重构损失
             if self.cri_recon:
-                recon = self.net_d(self.output)    # 不重构TOA，只重构DTOA
+                recon = self.net_d(self.output)  # 不重构TOA，只重构DTOA
                 l_recon = self.cri_recon(recon, self.input[:, (1, 2, 4)])
                 l_total += l_recon
                 loss_dict['l_Recon'] = l_recon
@@ -144,12 +143,13 @@ class CLModel(BaseModel):
                 loss_dict['l_Recon'] = l_recon
             if self.cri_infonce:
                 l_cl_batch_avg = 0
-                for output, label in zip(self.output, self.label):      # for batch
+                for output, label in zip(self.output, self.label):  # for batch
                     label_unique, counts = torch.unique(label, return_counts=True)  # 所有label种类
                     label_cnt = 0
                     l_cl_label_avg = 0
 
-                    for label_elem, count in zip(label_unique, counts):     # 对每种label，随机挑选出一个样本作为锚点，另一个作为正样本，并把其他label的特征作为负样本
+                    for label_elem, count in zip(label_unique,
+                                                 counts):  # 对每种label，随机挑选出一半样本作为锚点，另一半作为正样本，并把其他label的特征作为负样本
                         # 过滤样本数少于2的标签的样本
                         if count < 2:
                             continue
@@ -158,11 +158,11 @@ class CLModel(BaseModel):
                         mask = (label == label_elem)
                         feature = output[label == label_elem]  # (N1, D)  N1为该类的脉冲总数
 
-                        shuffle_idx = torch.randperm(feature.shape[0])   # 将该类的样本随机平均切分，一半为锚点，另一半为正样本
+                        shuffle_idx = torch.randperm(feature.shape[0])  # 将该类的样本随机平均切分，一半为锚点，另一半为正样本
                         mid = len(shuffle_idx) // 2
-                        anchor_idx, positive_idx = shuffle_idx[:mid], shuffle_idx[mid:2*mid]
-                        anchor = feature[anchor_idx, :]        # (N1 // 2, D)
-                        positive = feature[positive_idx, :]    # (N1 // 2, D)
+                        anchor_idx, positive_idx = shuffle_idx[:mid], shuffle_idx[mid:2 * mid]
+                        anchor = feature[anchor_idx, :]  # (N1 // 2, D)
+                        positive = feature[positive_idx, :]  # (N1 // 2, D)
 
                         negative = output[~mask, :]  # (N2, D)  N2为其他类的脉冲总数    此时InfoNCE应为unpaired模式
 
@@ -173,6 +173,37 @@ class CLModel(BaseModel):
                 l_cl_batch_avg /= B
                 l_total += l_cl_batch_avg
                 loss_dict['l_InfoNCE'] = l_cl_batch_avg
+
+            # Batch实现
+            # if self.cri_infonce:
+            #     output_flat = self.output.reshape(B * N, D)
+            #     label_flat = self.label.reshape(B * N)
+            #
+            #     label_unique, counts = torch.unique(label_flat, return_counts=True)  # 所有label种类
+            #     label_cnt = 0
+            #     l_cl_label_avg = 0
+            #
+            #     for label_elem, count in zip(label_unique, counts):     # 对每种label，随机挑选出一半样本作为锚点，另一半作为正样本，并把其他label的特征作为负样本
+            #         # 过滤样本数少于2的标签的样本
+            #         if count < 2:
+            #             continue
+            #         label_cnt += 1
+            #
+            #         mask = (label_flat == label_elem)
+            #         feature = output_flat[label_flat == label_elem]  # (N1, D)  N1为该类的脉冲总数
+            #
+            #         shuffle_idx = torch.randperm(feature.shape[0])   # 将该类的样本随机平均切分，一半为锚点，另一半为正样本
+            #         mid = len(shuffle_idx) // 2
+            #         anchor_idx, positive_idx = shuffle_idx[:mid], shuffle_idx[mid:2*mid]
+            #         anchor = feature[anchor_idx, :]        # (N1 // 2, D)
+            #         positive = feature[positive_idx, :]    # (N1 // 2, D)
+            #
+            #         negative = output_flat[~mask, :]  # (N2, D)  N2为其他类的脉冲总数    此时InfoNCE应为unpaired模式
+            #         l_cl_label_avg += self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
+            #     l_cl_label_avg /= label_cnt
+            #     l_total += l_cl_batch_avg
+            #     loss_dict['l_InfoNCE'] = l_cl_batch_avg
+
             '''
             if self.cri_infonce:
                 # 展平处理 (B*N, D) 和 (B*N)
@@ -193,7 +224,7 @@ class CLModel(BaseModel):
                     if counts[i] >= 2:
                         label_to_indices[lbl] = torch.where(valid_label == lbl)[0]
     
-                # 准备锚点、正样本和负样本列表，每个类1个锚点、1个正样本，k个负样本
+                # 准备锚点、正样本和负样本列表，每个类 n//2 个锚点, n // 2个正样本, k个负样本
                 anchors = []
                 positives = []
                 negatives_list = []
@@ -202,7 +233,10 @@ class CLModel(BaseModel):
                 # 处理每个有效类别
                 for lbl, indices in label_to_indices.items():
                     # 随机选择两个不同的样本作为锚点和正样本
-                    anchor_idx, positive_idx = torch.randperm(len(indices))[:2]
+                    indices_num = len(indices)
+                    shuffle_idx = torch.randperm(indices)
+                    mid = indices_num // 2
+                    anchor_idx, positive_idx = shuffle_idx[:mid], shuffle_idx[mid:mid*2]
     
                     anchors.append(valid_output[anchor_idx])
                     positives.append(valid_output[positive_idx])
@@ -248,7 +282,6 @@ class CLModel(BaseModel):
                 l_total += l_seqce
                 loss_dict['l_SeqCE'] = l_seqce
 
-
         l_total.backward()
         self.optimizer_g.step()
 
@@ -267,8 +300,6 @@ class CLModel(BaseModel):
             with torch.no_grad():
                 self.output = self.net_g(self.input)
             self.net_g.train()
-
-
 
     def dist_validation(self, dataloader, current_iter, tb_logger, save_img):
         if self.opt['rank'] == 0:
@@ -307,7 +338,7 @@ class CLModel(BaseModel):
                 cluster_labels[np.where(cluster_labels < 0)] = cluster_num + 1
 
             metric_data['pred_labels'] = torch.from_numpy(cluster_labels)
-            metric_data['true_labels'] = self.label.squeeze(0).detach().cpu()   # (1, B, N)
+            metric_data['true_labels'] = self.label.squeeze(0).detach().cpu()  # (1, B, N)
             if save_img['enable']:
                 if self.opt['is_train']:
                     save_img_path = osp.join(self.opt['path']['visualization'], data_name,
@@ -315,7 +346,7 @@ class CLModel(BaseModel):
                 else:
                     if self.opt['val']['suffix']:
                         save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
-                                 f'{data_name}_{self.opt["val"]["suffix"]}.png')
+                                                 f'{data_name}_{self.opt["val"]["suffix"]}.png')
                     else:
                         save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
                                                  f'{data_name}_{self.opt["name"]}.png')
