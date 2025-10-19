@@ -12,6 +12,7 @@ from src.utils.registry import MODEL_REGISTRY
 from src.models.base_model import BaseModel
 from src.data.data_util import pdw_write
 
+
 @MODEL_REGISTRY.register()
 class CLModel(BaseModel):
     """Base SR model for single image super-resolution."""
@@ -25,19 +26,18 @@ class CLModel(BaseModel):
         self.print_network(self.net_g)
 
         try:
-            self.net_h = build_network(self.opt['network_h'])          # 分类头，直接预测标签并计算CELoss
+            self.net_h = build_network(self.opt['network_h'])  # 分类头，直接预测标签并计算CELoss
             self.net_h = self.model_to_device(self.net_h)
             self.print_network(self.net_h)
         except:
             self.net_h = None
 
         try:
-            self.net_d = build_network(self.opt['network_d'])          # 重建头，重构输入并计算L1
+            self.net_d = build_network(self.opt['network_d'])  # 重建头，重构输入并计算L1
             self.net_d = self.model_to_device(self.net_d)
             self.print_network(self.net_d)
         except:
             self.net_d = None
-
 
         # load pretrained models
         load_path = self.opt['path'].get('pretrain_network_g', None)
@@ -46,7 +46,7 @@ class CLModel(BaseModel):
             self.load_network(self.net_g, load_path, self.opt['path'].get('strict_load_g', True), param_key)
 
         load_path_h = self.opt['path'].get('pretrain_network_h', None)
-        if load_path_h  is not None:
+        if load_path_h is not None:
             param_key = self.opt['path'].get('param_key_h', 'params')
             self.load_network(self.net_h, load_path_h, self.opt['path'].get('strict_load_h', True), param_key)
 
@@ -62,7 +62,7 @@ class CLModel(BaseModel):
         self.net_g.train()
         if self.net_h is not None:
             self.net_h.train()
-        if self.net_d  is not None:
+        if self.net_d is not None:
             self.net_d.train()
 
         train_opt = self.opt['train']
@@ -117,22 +117,21 @@ class CLModel(BaseModel):
         self.optimizer_g = self.get_optimizer(optim_type, optim_params, **train_opt['optim_g'])
         self.optimizers.append(self.optimizer_g)
 
-
     def feed_data(self, data):
-        self.input = data['pdws'].to(self.device)   # (B, N, 5)
-        self.label = data['labels'].to(self.device) # (B, N)
+        self.input = data['pdws'].to(self.device)  # (B, N, 5) x  noTOA  (B, N, 4)
+        self.label = data['labels'].to(self.device)  # (B, N)
         self.input_nonorm = data['pdws_nonorm']
 
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
-        self.output = self.net_g(self.input)   # B, L, D
+        self.output = self.net_g(self.input)  # B, L, D
 
         l_total = 0
         loss_dict = OrderedDict()
 
         if len(torch.unique(self.label)) == 1:  # 仅为单一脉冲时使用重构损失
             if self.cri_recon:
-                recon = self.net_d(self.output)    # 不重构TOA，只重构DTOA
+                recon = self.net_d(self.output)  # 不重构TOA，只重构DTOA
                 l_recon = self.cri_recon(recon, self.input[:, (1, 2, 4)])
                 l_total += l_recon
                 loss_dict['l_Recon'] = l_recon
@@ -208,7 +207,7 @@ class CLModel(BaseModel):
                 cluster_labels[np.where(cluster_labels < 0)] = cluster_num + 1
 
             metric_data['pred_labels'] = torch.from_numpy(cluster_labels)
-            metric_data['true_labels'] = self.label.squeeze(0).detach().cpu()   # (1, B, N)
+            metric_data['true_labels'] = self.label.squeeze(0).detach().cpu()  # (1, B, N)
             if save_img['enable']:
                 if self.opt['is_train']:
                     save_img_path = osp.join(self.opt['path']['visualization'], data_name,
@@ -216,7 +215,7 @@ class CLModel(BaseModel):
                 else:
                     if self.opt['val']['suffix']:
                         save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
-                                 f'{data_name}_{self.opt["val"]["suffix"]}.png')
+                                                 f'{data_name}_{self.opt["val"]["suffix"]}.png')
                     else:
                         save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
                                                  f'{data_name}_{self.opt["name"]}.png')
@@ -405,8 +404,6 @@ class CLModel(BaseModel):
 
         return l_cl_label_avg
 
-
-
     def _calculate_contrastive_loss_segment(self):
         """
         对于每个类别，构建一个全局平均特征，对比学习在点与平均特征上进行
@@ -442,6 +439,54 @@ class CLModel(BaseModel):
 
             l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
             l_cl_label_avg += l_cl
+        l_cl_label_avg /= label_cnt
+
+        return l_cl_label_avg
+
+    def _calculate_contrastive_loss_point_segment(self):
+        """
+        联合使用点级和全局级损失对比损失
+        """
+        B, N, D = self.output.shape
+        output = self.output.reshape(B * N, D)
+        label = self.label.reshape(B * N)
+
+        label_unique, counts = torch.unique(label, return_counts=True)  # 所有label种类
+        label_cnt = 0
+        l_cl_label_avg = 0
+
+        features_of_label = {}
+        features_of_label_mean = {}
+        for label_elem, count in zip(label_unique, counts):  # 对每种label，随机挑选出一个样本作为锚点，平均特征作为正样本，并把其他label的平均特征作为负样本
+            # 过滤样本数少于2的标签的样本
+            if count < 2:
+                continue
+            label_cnt += 1
+            feature = output[label == label_elem]  # (N1, D)  N1为该类的脉冲总数
+            features_of_label[label_elem] = feature
+            features_of_label_mean[label_elem] = feature.mean(dim=0)
+
+        for label_elem, count in zip(label_unique, counts):
+            if count < 2:
+                continue
+            mask = (label == label_elem)
+            feature = features_of_label[label_elem]
+            shuffle_idx = torch.randperm(feature.shape[0])[0]  # 随机取出一个为锚点
+
+            mid = len(shuffle_idx) // 2
+            anchor_point_idx, positive_point_idx = shuffle_idx[:mid], shuffle_idx[mid:2 * mid]
+            anchor_point = feature[anchor_point_idx, :]  # (1, D)
+            positive_point = feature[positive_point_idx, :]
+            negative_point = output[~mask, :]
+
+            anchor_global = feature[shuffle_idx[0]]
+            positive_global = features_of_label_mean[label_elem]
+            negative_global = torch.stack([value for key, value in features_of_label_mean.items() if key != label_elem], dim=0)
+
+            l_cl_p = self.cri_infonce(query=anchor_point, positive_key=positive_point, negative_keys=negative_point)
+            l_cl_g = self.cri_infonce(query=anchor_global, positive_key=positive_global, negative_keys=negative_global)
+            l_cl_label_avg += l_cl_p + l_cl_g
+
         l_cl_label_avg /= label_cnt
 
         return l_cl_label_avg

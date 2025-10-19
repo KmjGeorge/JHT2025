@@ -30,7 +30,7 @@ class DeinterleavingDataset(data.Dataset):
     def __getitem__(self, index):
         filename = self.filenames[index]
         data_path = os.path.join(self.folder, filename)
-        data = torch.load(data_path)
+        data = torch.load(data_path)       # freq, pw, pa, toa, dtoa, label
         if self.use_flip:
             if np.random.rand() < 0.5:
                 data = data.flip([0])
@@ -40,15 +40,16 @@ class DeinterleavingDataset(data.Dataset):
         freqs = normalize_zscore(data[:, 0])
         pws = normalize_zscore(data[:, 1])
         pas = normalize_zscore(data[:, 2])
-        toas = normalize_minmax(data[:, 3])
+        # toas = data[:, 3]
 
         # recaculate dtoa from normalized toas
         # dtoa = normalize_minmax(data[:, 4])
-        dtoa = F.pad(torch.diff(toas), pad=(1, 0), value=0.)
+        dtoa = F.pad(torch.diff(data[:, 3]), pad=(1, 0), value=0.)
+        dtoa = normalize_zscore(dtoa)
 
         # print(freqs.shape, pws.shape, pas.shape, toas.shape, dtoa.shape)
-        pdws = torch.stack([freqs, pws, pas, toas, dtoa], dim=1).float()  # (N, 5)   freq, pw ,pa, toa, dtoa
-        labels = data[:, 5]  # (N, )
+        pdws = torch.stack([freqs, pws, pas, dtoa], dim=1).float()  # (N, 5)    (N, 4) freq, pw ,pa, dtoa  删除toa，只使用归一化的dtoa
+        labels = data[:, -1]  # (N, )
 
 
         return {'pdws': pdws, 'pdws_nonorm': pdws_nonorm, 'labels': labels, 'data_path': data_path}

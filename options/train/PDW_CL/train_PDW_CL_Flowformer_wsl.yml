@@ -1,5 +1,5 @@
 # general settings
-name: 023_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_allNeg_LossImpl3_wsl
+name: 023_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_allNeg_LossImpl2_wsl   # 修改为LossImpl2
 model_type: CLModel
 num_gpu: 2
 manual_seed: 0
@@ -55,7 +55,7 @@ network_g:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state:  /mnt/f/github/JHT2025/experiments/023_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_allNeg_LossImpl3_wsl/training_states/100000.state
+  resume_state:  ~
 
 # training settings
 train:

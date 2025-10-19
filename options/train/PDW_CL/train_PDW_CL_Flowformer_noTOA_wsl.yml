@@ -1,8 +1,5 @@
-# 引入了L1重构Loss
-# 注意：数据集中需存在仅单个目标的PDW串
-
 # general settings
-name: 022_Deinterleaving_Flowformer_CLCEL1_2to10_1k_allNeg_LossImpl3_wsl
+name: 023_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_allNeg_noTOA_LossImpl3_wsl
 model_type: CLModel
 num_gpu: 2
 manual_seed: 0
@@ -24,6 +21,8 @@ datasets:
     prefetch_mode: ~
     # pin_memory: true
 
+    use_flip: true
+
   val:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
@@ -35,7 +34,7 @@ datasets:
 network_g:
   type: Flowformer
   seq_len: 1000
-  enc_in: 5
+  enc_in: 4
   d_model: 128
   c_out: 32
   n_heads: 8
@@ -43,24 +42,20 @@ network_g:
   activation: relu
   dropout: 0.1
   e_layers: 8
+  pe_mode: RoPE
 
-network_h:
-  type: MLPClassifier
-  c_in: 32
-  n_classes: 15
-  hidden_dim: 128
-
-network_d:
-  type: MLPDecoder
-  c_in: 32
-  c_out: 4     # reconstruct [freqs, pws, pas, dtoa] without toas
-  hidden_dim: 256
+#network_g:
+#  type: SimpleMLP
+#  seq_len: 3000
+#  c_in: 5
+#  c_out: 32
+#  d_model: 256
 
 # path
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state: ~
+  resume_state:  ~
 
 # training settings
 train:
@@ -88,16 +83,6 @@ train:
     loss_weight: 1.0
     temperature: 0.1
     negative_mode: unpaired
-    reduction: mean
-
-  seqce_opt:
-    type: SeqCELoss
-    loss_weight: !!float 1e-2
-    reduction: mean
-
-  recon_opt:
-    type: L1Loss
-    loss_weight: !!float 1e-2
     reduction: mean
 
 ### validation settings

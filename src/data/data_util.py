@@ -278,7 +278,7 @@ def draw_pdwtrain(pdw, save_path):
 
     plt.subplot(222)
     plt.title('DTOA(us)')
-    dtoa = np.concatenate(([0], np.diff(pdw.TOAdots)))
+    dtoa = pdw.update_dtoa()
     plt.scatter(x, dtoa, color='purple', s=0.1)
 
     plt.subplot(223)
@@ -356,14 +356,36 @@ def pdw_write(label, label_gt, data, out_feature, save_img_path, save_config):
         # save T-SNE visualization
         tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=500)
         feature_tsne = tsne.fit_transform(out_feature)
-        plt.figure(figsize=(10, 6))
-        plt.title('Output T-SNE')
-        for lbl in np.unique(label_gt):
-            feature_of_label = feature_tsne[label_gt == lbl, :]
-            plt.scatter(feature_of_label[:, 0], feature_of_label[:, 1], c=color_map_selected[int(lbl)], s=0.5, label=str(int(lbl)))
-        plt.xlabel('Demension 1')
-        plt.ylabel('Demension 2')
-        plt.legend(loc='lower right')
+
+        if len(np.unique(label) <= len(color_map_selected)):
+            plt.figure(figsize=(14, 6))
+            plt.subplot(121)
+            plt.title('Output T-SNE (GT Label)')
+            for lbl in np.unique(label_gt):
+                feature_of_label = feature_tsne[label_gt == lbl, :]
+                plt.scatter(feature_of_label[:, 0], feature_of_label[:, 1], c=color_map_selected[int(lbl)], s=0.5, label=str(int(lbl)))
+            plt.xlabel('Demension 1')
+            plt.ylabel('Demension 2')
+            plt.legend(loc='lower right')
+
+            plt.subplot(122)
+            plt.title('Output T-SNE (Pred Label)')
+            for lbl in np.unique(label):
+                feature_of_label = feature_tsne[label == lbl, :]
+                plt.scatter(feature_of_label[:, 0], feature_of_label[:, 1], c=color_map_selected[int(lbl)], s=0.5, label=str(int(lbl)))
+            plt.xlabel('Demension 1')
+            plt.ylabel('Demension 2')
+            plt.legend(loc='lower right')
+        else:
+            plt.figure(figsize=(10, 6))
+            plt.title('Output T-SNE (GT Label)')
+            for lbl in np.unique(label_gt):
+                feature_of_label = feature_tsne[label_gt == lbl, :]
+                plt.scatter(feature_of_label[:, 0], feature_of_label[:, 1], c=color_map_selected[int(lbl)], s=0.5, label=str(int(lbl)))
+            plt.xlabel('Demension 1')
+            plt.ylabel('Demension 2')
+            plt.legend(loc='lower right')
+
         plt.savefig(save_img_path.replace('.png', '_feature.png'), dpi=300)
         plt.close()
 
