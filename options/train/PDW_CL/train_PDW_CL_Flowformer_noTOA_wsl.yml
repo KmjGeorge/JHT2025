@@ -1,5 +1,5 @@
 # general settings
-name: 023_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_allNeg_noTOA_LossImpl3_wsl
+name: 023_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_allNeg_noTOA_LossImpl3_PointSeg_wsl
 model_type: CLModel
 num_gpu: 2
 manual_seed: 0
@@ -9,7 +9,7 @@ datasets:
   train:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: /mnt/f/Datasets/JHT2025Pre/train1016
+    dataroot: /mnt/d/Datasets/JHT2025Pre/train1016
     filename_tmpl: '{}'
     io_backend:
       type: disk
@@ -26,7 +26,7 @@ datasets:
   val:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: /mnt/f/Datasets/JHT2025Pre/val1016
+    dataroot: /mnt/d/Datasets/JHT2025Pre/val1016
     io_backend:
       type: disk
 
