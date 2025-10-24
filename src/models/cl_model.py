@@ -141,7 +141,7 @@ class CLModel(BaseModel):
                 loss_dict['l_Recon'] = l_recon
 
             if self.cri_infonce:
-                l_cl = self._calculate_contrastive_loss_point_segment()
+                l_cl = self._calculate_contrastive_loss()
                 l_total += l_cl
                 loss_dict['l_InfoNCE'] = l_cl
 
@@ -204,7 +204,7 @@ class CLModel(BaseModel):
             cluster_num = max(cluster_labels) + 1
             # 若存在标签为-1的离群点，将其视为一个新类
             if np.where(cluster_labels < 0):
-                cluster_labels[np.where(cluster_labels < 0)] = cluster_num + 1
+                cluster_labels[np.where(cluster_labels < 0)] = cluster_num
 
             metric_data['pred_labels'] = torch.from_numpy(cluster_labels)
             metric_data['true_labels'] = self.label.squeeze(0).detach().cpu()  # (1, B, N)
@@ -426,7 +426,7 @@ class CLModel(BaseModel):
                 l_cl_p = self.cri_infonce(query=anchor_point, positive_key=positive_point, negative_keys=negative_point)
                 l_cl_g = self.cri_infonce(query=anchor_global, positive_key=positive_global,
                                           negative_keys=negative_global)
-                l_cl_label_avg += 0.5 * l_cl_p + 0.5 * l_cl_g
+                l_cl_label_avg += 0.1 * l_cl_p + 0.9 * l_cl_g
             l_cl_label_avg = l_cl_label_avg / label_cnt
             l_cl_batch_avg += l_cl_label_avg
         l_cl_batch_avg /= B

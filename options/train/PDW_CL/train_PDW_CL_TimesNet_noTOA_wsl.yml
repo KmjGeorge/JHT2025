@@ -1,5 +1,5 @@
 # general settings
-name: 023_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_allNeg_noTOA_LossImpl3_t0.05_wsl
+name: 026_Deinterleaving_TimesNet_CL_2to10_1k_allNeg_noTOA_LossImpl3_t0.05_wsl
 model_type: CLModel
 num_gpu: 2
 manual_seed: 0
@@ -32,17 +32,16 @@ datasets:
 
 # network structures
 network_g:
-  type: Flowformer
+  type: TimesNet
   seq_len: 1000
   enc_in: 4
   d_model: 128
   c_out: 32
-  n_heads: 8
-  d_ff: 512
-  activation: relu
-  dropout: 0.1
-  e_layers: 8
-  pe_mode: RoPE
+  top_k: 5
+  d_ff: 256
+  dropout: 0.05
+  e_layers: 6
+  num_kernels: 4
 
 #network_g:
 #  type: SimpleMLP
