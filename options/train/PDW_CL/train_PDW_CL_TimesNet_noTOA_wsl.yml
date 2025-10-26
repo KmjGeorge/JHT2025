@@ -18,8 +18,8 @@ datasets:
     num_worker_per_gpu: 2
     batch_size_per_gpu: 4
     dataset_enlarge_ratio: 100
-    prefetch_mode: ~
-    # pin_memory: true
+    prefetch_mode: cuda
+    pin_memory: true
 
     use_flip: true
 
@@ -41,7 +41,7 @@ network_g:
   d_ff: 256
   dropout: 0.05
   e_layers: 6
-  num_kernels: 4
+  num_kernels: 3
 
 #network_g:
 #  type: SimpleMLP

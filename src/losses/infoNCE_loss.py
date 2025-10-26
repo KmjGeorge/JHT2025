@@ -50,18 +50,17 @@ class InfoNCELoss(nn.Module):
         >>> output = loss(query, positive_key, negative_keys)
     """
 
-    def __init__(self, temperature=0.1, reduction='mean', negative_mode='unpaired', loss_weight=1.0):
+    def __init__(self, temperature=0.1, reduction='mean', loss_weight=1.0):
         super().__init__()
         self.temperature = temperature
         self.reduction = reduction
-        self.negative_mode = negative_mode
         self.loss_weight = loss_weight
 
-    def forward(self, query, positive_key, negative_keys=None):
+    def forward(self, query, positive_key, negative_keys=None, negative_mode='unpaired'):
         return info_nce(query, positive_key, negative_keys,
                         temperature=self.temperature,
                         reduction=self.reduction,
-                        negative_mode=self.negative_mode) * self.loss_weight
+                        negative_mode=negative_mode) * self.loss_weight
 
 
 def info_nce(query, positive_key, negative_keys=None, temperature=0.1, reduction='mean', negative_mode='unpaired'):
@@ -101,7 +100,7 @@ def info_nce(query, positive_key, negative_keys=None, temperature=0.1, reduction
 
         if negative_mode == 'unpaired':
             # Cosine between all query-negative combinations
-            negative_logits = query @ transpose(negative_keys)
+            negative_logits = query @ transpose(negative_keys)   # query (B, D)   negative_keys (B, D) -> (D, B)
 
         elif negative_mode == 'paired':
             query = query.unsqueeze(1)
@@ -112,6 +111,7 @@ def info_nce(query, positive_key, negative_keys=None, temperature=0.1, reduction
         # First index in last dimension are the positive samples
         logits = torch.cat([positive_logit, negative_logits], dim=1)
         labels = torch.zeros(len(logits), dtype=torch.long, device=query.device)
+
     else:
         # Negative keys are implicitly off-diagonal positive keys.
 
@@ -133,15 +133,10 @@ def normalize(*xs):
 
 
 if __name__ == '__main__':
-    torch.manual_seed(1234)
-    loss = InfoNCELoss(negative_mode='unpaired')
+    loss = InfoNCELoss(reduction='none')
     batch_size, num_negative, embedding_size = 32, 48, 128
     query = torch.randn(batch_size, embedding_size)
     positive_key = torch.randn(batch_size, embedding_size)
     negative_keys = torch.randn(num_negative, embedding_size)
-    print(negative_keys.shape, negative_keys)
-    negative_keys_2 = F.pad(negative_keys, (0, 0, 0, 1), value=0)
-    print(negative_keys_2.shape, negative_keys_2)
-    output = loss(query, positive_key, negative_keys)
-    output2 = loss(query, positive_key, negative_keys_2)
-    print(output, output2)
+    output = loss(query, positive_key, negative_keys, negative_mode='unpaired') # negative_mode='unpaired' is the default value
+    print(output)

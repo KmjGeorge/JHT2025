@@ -1,7 +1,7 @@
 # general settings
-name: 023_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_allNeg_noTOA_LossImpl3_t0.05_wsl
+name: 024_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_allNeg_noTOA_LossImpl3_t0.05_as_wsl
 model_type: CLModel
-num_gpu: 2
+num_gpu: 1
 manual_seed: 0
 
 # dataset and data loader settings
@@ -18,8 +18,8 @@ datasets:
     num_worker_per_gpu: 2
     batch_size_per_gpu: 4
     dataset_enlarge_ratio: 100
-    prefetch_mode: ~
-    # pin_memory: true
+    prefetch_mode: cuda
+    pin_memory: true
 
     use_flip: true
 
@@ -82,7 +82,6 @@ train:
     type: InfoNCELoss
     loss_weight: 1.0
     temperature: 0.05
-    # negative_mode: unpaired
     reduction: mean
 
 ### validation settings

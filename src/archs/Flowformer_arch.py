@@ -421,8 +421,7 @@ class Flowformer(nn.Module):
         )
 
         # decoder
-        self.projection = nn.Linear(
-            d_model, c_out, bias=True)
+        self.projection = nn.Sequential(nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, c_out))
 
     def forecast(self, x_enc):
         seq_len = x_enc.shape[1]

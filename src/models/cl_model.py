@@ -141,7 +141,10 @@ class CLModel(BaseModel):
                 loss_dict['l_Recon'] = l_recon
 
             if self.cri_infonce:
-                l_cl = self._calculate_contrastive_loss()
+                if current_iter <= 150000:
+                    l_cl = self._calculate_contrastive_loss_point_active_sampling()
+                else:
+                    l_cl = self._calculate_contrastive_loss()
                 l_total += l_cl
                 loss_dict['l_InfoNCE'] = l_cl
 
@@ -199,7 +202,8 @@ class CLModel(BaseModel):
             self.feed_data(val_data)
             self.test()
 
-            out_fea = self.output.squeeze(0).detach().cpu().numpy()
+            out_fea = self.output.squeeze(0).detach()
+            out_fea = F.normalize(out_fea, p=2, dim=-1).cpu().numpy()
             cluster_labels = clusterer.fit_predict(out_fea)
             cluster_num = max(cluster_labels) + 1
             # 若存在标签为-1的离群点，将其视为一个新类
@@ -509,6 +513,59 @@ class CLModel(BaseModel):
                 l_cl_g = self.cri_infonce(query=anchor_global, positive_key=positive_global,
                                           negative_keys=negative_global)
                 l_cl_label_avg += 0.5 * l_cl_p + 0.5 * l_cl_g
+            l_cl_label_avg = l_cl_label_avg / label_cnt
+            l_cl_batch_avg += l_cl_label_avg
+        l_cl_batch_avg /= B
+
+        return l_cl_batch_avg
+
+
+    def _calculate_contrastive_loss_point_active_sampling(self):
+        """
+        引入负样本主动学习采样
+        注意设置InfoNCELoss为paired模式
+        """
+
+        B, N, D = self.output.shape
+        l_cl_batch_avg = 0
+        for output, label in zip(self.output, self.label):  # for batch
+            label_unique, counts = torch.unique(label, return_counts=True)  # 所有label种类
+            label_cnt = 0
+            l_cl_label_avg = 0
+
+            for label_elem, count in zip(label_unique, counts):
+                if count < 2:
+                    continue
+                label_cnt += 1
+                mask = (label == label_elem)
+                feature = output[label == label_elem]  # 取出该label的特征
+                shuffle_idx = torch.randperm(feature.shape[0])
+
+                mid = len(shuffle_idx) // 2
+                anchor_point_idx, positive_point_idx = shuffle_idx[:mid], shuffle_idx[mid:2 * mid]  # 一半为锚点，一半为正样本
+                anchor_point = feature[anchor_point_idx, :]
+                positive_point = feature[positive_point_idx, :]
+
+                negative_point_pool = output[~mask, :]  # 所有负样本
+
+                neg_num = min(2 * len(shuffle_idx), len(negative_point_pool))                # 负样本选择数量
+                # negative_point = []
+                # for anchor, positive in zip(anchor_point, positive_point):
+                #     similarities = F.cosine_similarity(anchor, negative_point_pool)   # 计算锚点与负样本相似度
+                #     # anchor (1, D)   negative_pool (Nd, D)
+                #     _, indices = torch.topk(similarities, k=neg_num)
+                #     negative_points_for_anchor = negative_point_pool[indices]
+                #     # print('negative_points_for_anchor,' ,negative_points_for_anchor.shape)
+                #     negative_point.append(negative_points_for_anchor)
+                # negative_point = torch.stack(negative_point, dim=0)              # (Na, neg_num, D)
+
+                similarities = F.cosine_similarity(anchor_point.unsqueeze(1), negative_point_pool.unsqueeze(0), dim=-1)
+                _, indices = torch.topk(similarities, k=neg_num, dim=1)
+                negative_point = negative_point_pool[indices]
+
+                # print(anchor_point.shape, positive_point.shape, negative_point.shape)
+                l_cl_p = self.cri_infonce(query=anchor_point, positive_key=positive_point, negative_keys=negative_point, negative_mode='paired')
+                l_cl_label_avg += l_cl_p
             l_cl_label_avg = l_cl_label_avg / label_cnt
             l_cl_batch_avg += l_cl_label_avg
         l_cl_batch_avg /= B

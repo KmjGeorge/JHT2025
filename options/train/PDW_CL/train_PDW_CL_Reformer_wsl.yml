@@ -1,5 +1,5 @@
 # general settings
-name: 011_Deinterleaving_Reformer_CL_2to10_1k_allNeg_LossImpl3_wsl
+name: 012_Deinterleaving_Reformer_CL_2to10_1k_allNeg_noTOA_LossImpl3_t0.05_wsl
 model_type: CLModel
 num_gpu: 2
 manual_seed: 0
@@ -9,7 +9,7 @@ datasets:
   train:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: /mnt/f/Datasets/JHT2025Pre/train1016
+    dataroot: /mnt/d/Datasets/JHT2025Pre/train1016
     filename_tmpl: '{}'
     io_backend:
       type: disk
@@ -24,7 +24,7 @@ datasets:
   val:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: /mnt/f/Datasets/JHT2025Pre/val1016
+    dataroot: /mnt/d/Datasets/JHT2025Pre/val1016
     io_backend:
       type: disk
 
@@ -32,7 +32,7 @@ datasets:
 network_g:
   type: Reformer
   seq_len: 1000
-  enc_in: 5
+  enc_in: 4
   d_model: 128
   c_out: 32
   n_heads: 8
@@ -54,7 +54,7 @@ network_g:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state: ~ # /mnt/f/github/JHT2025/experiments/010_Deinterleaving_Reformer_CL_2to10_2k_allNeg_LossImpl3_wsl/training_states/30000.state
+  resume_state: ~
 
 # training settings
 train:
@@ -80,8 +80,7 @@ train:
   infonce_opt:
     type: InfoNCELoss
     loss_weight: 1.0
-    temperature: 0.1
-    negative_mode: unpaired
+    temperature: 0.05
     reduction: mean
 
 ### validation settings

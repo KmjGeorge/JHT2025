@@ -208,8 +208,7 @@ class Reformer(nn.Module):
             norm_layer=torch.nn.LayerNorm(d_model)
         )
 
-        self.projection = nn.Linear(
-            d_model, c_out, bias=True)
+        self.projection = nn.Sequential(nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, c_out))
 
     def long_forecast(self, x):
         enc_out = self.enc_embedding(x)  # [B,T,C]
