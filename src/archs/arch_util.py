@@ -200,34 +200,6 @@ def pixel_unshuffle(x, scale):
     return x_view.permute(0, 1, 3, 5, 2, 4).reshape(b, out_channel, h, w)
 
 
-class DCNv2Pack(ModulatedDeformConvPack):
-    """Modulated deformable conv for deformable alignment.
-
-    Different from the official DCNv2Pack, which generates offsets and masks
-    from the preceding features, this DCNv2Pack takes another different
-    features to generate offsets and masks.
-
-    ``Paper: Delving Deep into Deformable Alignment in Video Super-Resolution``
-    """
-
-    def forward(self, x, feat):
-        out = self.conv_offset(feat)
-        o1, o2, mask = torch.chunk(out, 3, dim=1)
-        offset = torch.cat((o1, o2), dim=1)
-        mask = torch.sigmoid(mask)
-
-        offset_absmean = torch.mean(torch.abs(offset))
-        if offset_absmean > 50:
-            logger = get_root_logger()
-            logger.warning(f'Offset abs mean is {offset_absmean}, larger than 50.')
-
-        if LooseVersion(torchvision.__version__) >= LooseVersion('0.9.0'):
-            return torchvision.ops.deform_conv2d(x, offset, self.weight, self.bias, self.stride, self.padding,
-                                                 self.dilation, mask)
-        else:
-            return modulated_deform_conv(x, offset, mask, self.weight, self.bias, self.stride, self.padding,
-                                         self.dilation, self.groups, self.deformable_groups)
-
 
 def _no_grad_trunc_normal_(tensor, mean, std, a, b):
     # From: https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/layers/weight_init.py
@@ -292,6 +264,40 @@ def trunc_normal_(tensor, mean=0., std=1., a=-2., b=2.):
     """
     return _no_grad_trunc_normal_(tensor, mean, std, a, b)
 
+
+def positional_encoding(pe, learn_pe, q_len, d_model):
+    # Positional encoding
+    if pe == None:
+        W_pos = torch.empty((q_len, d_model)) # pe = None and learn_pe = False can be used to measure impact of pe
+        nn.init.uniform_(W_pos, -0.02, 0.02)
+        learn_pe = False
+    elif pe == 'zero':
+        W_pos = torch.empty((q_len, 1))
+        nn.init.uniform_(W_pos, -0.02, 0.02)
+    elif pe == 'zeros':
+        W_pos = torch.empty((q_len, d_model))
+        nn.init.uniform_(W_pos, -0.02, 0.02)
+    elif pe == 'normal' or pe == 'gauss':
+        W_pos = torch.zeros((q_len, 1))
+        torch.nn.init.normal_(W_pos, mean=0.0, std=0.1)
+    elif pe == 'uniform':
+        W_pos = torch.zeros((q_len, 1))
+        nn.init.uniform_(W_pos, a=0.0, b=0.1)
+    elif pe == 'sincos':
+        def SinCosPosEncoding(q_len, d_model, normalize=True):
+            pe = torch.zeros(q_len, d_model)
+            position = torch.arange(0, q_len).unsqueeze(1)
+            div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
+            pe[:, 0::2] = torch.sin(position * div_term)
+            pe[:, 1::2] = torch.cos(position * div_term)
+            if normalize:
+                pe = pe - pe.mean()
+                pe = pe / (pe.std() * 10)
+            return pe
+        W_pos = SinCosPosEncoding(q_len, d_model, normalize=True)
+    else: raise ValueError(f"{pe} is not a valid pe (positional encoder. Available types: 'gauss'=='normal', \
+        'zeros', 'zero', uniform', 'sincos', None.)")
+    return nn.Parameter(W_pos, requires_grad=learn_pe)
 
 # From PyTorch
 def _ntuple(n):

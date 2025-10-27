@@ -143,7 +143,7 @@ class CLModel(BaseModel):
             sample_milestone = self.opt['train'].get('sample_milestone', None)
             if self.cri_infonce:
                 if sample_milestone is not None:
-                    if current_iter <= self.opt['train']['sample_milestone']:
+                    if current_iter <= sample_milestone:
                         l_cl = self._calculate_contrastive_loss_point_active_sampling()
                     else:
                         l_cl = self._calculate_contrastive_loss()
@@ -570,6 +570,32 @@ class CLModel(BaseModel):
                 # print(anchor_point.shape, positive_point.shape, negative_point.shape)
                 l_cl_p = self.cri_infonce(query=anchor_point, positive_key=positive_point, negative_keys=negative_point, negative_mode='paired')
                 l_cl_label_avg += l_cl_p
+            l_cl_label_avg = l_cl_label_avg / label_cnt
+            l_cl_batch_avg += l_cl_label_avg
+        l_cl_batch_avg /= B
+
+        return l_cl_batch_avg
+
+
+    def _calculate_contrastive_loss_prototype(self):
+        feature, prototype = self.output
+        # prototype应为一个字典，key为label名，values为原型向量  # (B, D)
+        B, N, D = feature.shape
+        l_cl_batch_avg = 0
+        for output, label in zip(self.output, self.label):
+            label_unique, counts = torch.unique(label, return_counts=True)
+            label_cnt = 0
+            l_cl_label_avg = 0
+
+            for label_elem, count in zip(label_unique, counts):
+                label_cnt +=1
+                feature = output[label == label_elem]
+                anchor = feature
+                label_ = int(label_elem.item())
+                positive = prototype[label_].expand(feature.shape[0], D)
+                negative = torch.stack([v for k, v in prototype.item() if k != label_], dim=0)
+                l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_key=negative, negative_mode='unpaired')
+                l_cl_label_avg += l_cl
             l_cl_label_avg = l_cl_label_avg / label_cnt
             l_cl_batch_avg += l_cl_label_avg
         l_cl_batch_avg /= B

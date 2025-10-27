@@ -443,6 +443,76 @@ class Flowformer(nn.Module):
         return dec_out[:, -self.pred_len:, :]  # [B, L, D]
 
 
+
+@ARCH_REGISTRY.register()
+class Flowformer_P(nn.Module):
+    """
+    modified from https://github.com/thuml/Flowformer
+
+    pe_mode (str) : optional 'Symmetric_Relative', 'Bidirectional_ALiBi', 'RoPE' or 'Absolute'
+    """
+
+    def __init__(self, seq_len, enc_in, c_out, d_model, dropout, n_heads, d_ff, activation, e_layers, pe_mode='ALiBi', label_num=15):
+        super(Flowformer_P, self).__init__()
+        self.pred_len = seq_len
+
+        self.enc_in = enc_in
+        self.c_out = c_out
+        self.pe_mode = pe_mode
+        self.prototype = nn.Parameter(torch.randn(label_num, d_model, requires_grad=True))
+        self.prototype_projection = nn.Sequential(nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, c_out))
+        self.label_num = 15
+
+        if self.pe_mode == 'Absolute':
+            self.enc_embedding = DataEmbedding(self.enc_in, d_model, dropout, True)
+        else:
+            self.enc_embedding = DataEmbedding(self.enc_in, d_model, dropout, False)
+            # if self.pe_mode == 'Symmetric_Relative':
+            #     self.pos_encoder = SymmetricT5RelativeBias(num_heads)
+            # elif self.pe_mode == 'Bidirectional_ALiBi':
+            #     self.pos_encoder = BidirectionalALiBI(num_heads)
+            if self.pe_mode == 'RoPE':
+                # self.rope = RotaryEmbedding(dim=d_model // n_heads, freqs_for='lang', learned_freq=True, cache_if_possible=True, cache_max_seq_len=seq_len * 4)
+                self.freqs_cis = precompute_freqs_cis(d_model // n_heads, seq_len * 2)
+
+        # Encoder
+        self.encoder = Encoder(
+            [
+                EncoderLayer(
+                    AttentionLayer(
+                        FlowAttention(attention_dropout=dropout), d_model, n_heads),
+                    d_model,
+                    d_ff,
+                    dropout=dropout,
+                    activation=activation
+                ) for l in range(e_layers)
+            ],
+            norm_layer=torch.nn.LayerNorm(d_model)
+        )
+
+        # decoder
+        self.projection = nn.Sequential(nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, c_out))
+
+    def forecast(self, x_enc):
+        seq_len = x_enc.shape[1]
+        # Embedding
+        enc_out = self.enc_embedding(x_enc)
+        if self.pe_mode == 'RoPE':
+            self.freqs_cis = self.freqs_cis.to(x_enc.device)
+            freqs_cis = self.freqs_cis[: seq_len]
+        else:
+            freqs_cis = None
+        enc_out, attns = self.encoder(enc_out, freqs_cis, attn_mask=None)
+
+        dec_out = self.projection(enc_out)
+        return dec_out
+
+    def forward(self, x_enc):
+        dec_out = self.forecast(x_enc)
+        prototype = self.prototype_projection(self.prototype)
+        prototype_dict = {k:v for k, v in zip([i for i in range(self.label_num)], [prototype[i] for i in range(self.label_num)])}
+        return dec_out[:, -self.pred_len:, :], prototype_dict  # [B, L, D]
+
 if __name__ == '__main__':
     model = Flowformer(seq_len=50000,
                        enc_in=5,
