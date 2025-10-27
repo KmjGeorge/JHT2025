@@ -140,9 +140,13 @@ class CLModel(BaseModel):
                 l_recon = 0
                 loss_dict['l_Recon'] = l_recon
 
+            sample_milestone = self.opt['train'].get('sample_milestone', None)
             if self.cri_infonce:
-                if current_iter <= 150000:
-                    l_cl = self._calculate_contrastive_loss_point_active_sampling()
+                if sample_milestone is not None:
+                    if current_iter <= self.opt['train']['sample_milestone']:
+                        l_cl = self._calculate_contrastive_loss_point_active_sampling()
+                    else:
+                        l_cl = self._calculate_contrastive_loss()
                 else:
                     l_cl = self._calculate_contrastive_loss()
                 l_total += l_cl
