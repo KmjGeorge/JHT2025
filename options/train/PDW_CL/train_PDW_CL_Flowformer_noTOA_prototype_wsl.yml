@@ -43,7 +43,8 @@ network_g:
   dropout: 0.1
   e_layers: 8
   pe_mode: RoPE
-
+  label_num: 15
+  prototype_num: 64
 #network_g:
 #  type: SimpleMLP
 #  seq_len: 3000

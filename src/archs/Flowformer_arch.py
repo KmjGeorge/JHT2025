@@ -452,16 +452,17 @@ class Flowformer_P(nn.Module):
     pe_mode (str) : optional 'Symmetric_Relative', 'Bidirectional_ALiBi', 'RoPE' or 'Absolute'
     """
 
-    def __init__(self, seq_len, enc_in, c_out, d_model, dropout, n_heads, d_ff, activation, e_layers, pe_mode='ALiBi', label_num=15):
+    def __init__(self, seq_len, enc_in, c_out, d_model, dropout, n_heads, d_ff, activation, e_layers, pe_mode='ALiBi', label_num=15, prototype_num=32):
         super(Flowformer_P, self).__init__()
         self.pred_len = seq_len
 
         self.enc_in = enc_in
         self.c_out = c_out
         self.pe_mode = pe_mode
-        self.prototype = nn.Parameter(torch.randn(label_num, d_model, requires_grad=True))
+        self.prototype = nn.Parameter(torch.rand(label_num * prototype_num, d_model, requires_grad=True))
         self.prototype_projection = nn.Sequential(nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, c_out))
-        self.label_num = 15
+        self.label_num = label_num
+        self.prototype_num = prototype_num
 
         if self.pe_mode == 'Absolute':
             self.enc_embedding = DataEmbedding(self.enc_in, d_model, dropout, True)
@@ -510,7 +511,7 @@ class Flowformer_P(nn.Module):
     def forward(self, x_enc):
         dec_out = self.forecast(x_enc)
         prototype = self.prototype_projection(self.prototype)
-        prototype_dict = {k:v for k, v in zip([i for i in range(self.label_num)], [prototype[i] for i in range(self.label_num)])}
+        prototype_dict = {k: v for k, v in zip([i for i in range(self.label_num)], [prototype[i] for i in range(self.label_num)])}
         return dec_out[:, -self.pred_len:, :], prototype_dict  # [B, L, D]
 
 if __name__ == '__main__':

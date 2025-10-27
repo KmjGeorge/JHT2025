@@ -37,7 +37,7 @@
 10、咋回事啊Autoformer
    TimesNet
 11、Cos学习率
-12、原型正负样本  T=0.05  running   ○
+12、原型正负样本  T=0.05  running   性能有一定下降，但大幅加快训练速度
 
 
 结论:
@@ -51,3 +51,4 @@
 
 ！！！！！！！！！！！！！！！！！换新数据记得改label_map (data_util.py) ！！！！！！！！！！！！！！！
 使用read_pdw_new_recog  和PDWTrain_new
+修改原型的label_num

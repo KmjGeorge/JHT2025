@@ -523,7 +523,6 @@ class CLModel(BaseModel):
 
         return l_cl_batch_avg
 
-
     def _calculate_contrastive_loss_point_active_sampling(self):
         """
         引入负样本主动学习采样
@@ -576,7 +575,6 @@ class CLModel(BaseModel):
 
         return l_cl_batch_avg
 
-
     def _calculate_contrastive_loss_prototype(self):
         feature, prototype = self.output
         # prototype应为一个字典，key为label名，values为原型向量  # (B, D)
@@ -590,12 +588,21 @@ class CLModel(BaseModel):
             for label_elem, count in zip(label_unique, counts):
                 label_cnt +=1
                 feature = output[label == label_elem]
+
                 anchor = feature
                 label_ = int(label_elem.item())
-                positive = prototype[label_].expand(feature.shape[0], D)
-                negative = torch.stack([v for k, v in prototype.item() if k != label_], dim=0)
+                proto = prototype[label_]
+
+                indices = torch.randperm(feature.shape[0]) % proto.shape[0]
+                positive = proto[indices]
+
+                negative = torch.cat([v for k, v in prototype.item() if k != label_], dim=0)  # (Nd, D)  Nd = prototype_num * (class_num - 1)
+
                 l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_key=negative, negative_mode='unpaired')
-                l_cl_label_avg += l_cl
+
+                anchor_proto, positive_proto = proto.chunk(2, dim=0)
+                l_cl_proto = self.cri_infonce(query=anchor_proto, positive_key=positive_proto, negative_keys=negative, negative_mode='unpaired')
+                l_cl_label_avg += l_cl + 0.2 * l_cl_proto
             l_cl_label_avg = l_cl_label_avg / label_cnt
             l_cl_batch_avg += l_cl_label_avg
         l_cl_batch_avg /= B
