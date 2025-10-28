@@ -206,6 +206,9 @@ class CLModel(BaseModel):
             self.feed_data(val_data)
             self.test()
 
+            if '_P' in self.opt['network_g']['type']:
+                out_fea, out_prototype = self.output
+
             out_fea = self.output.squeeze(0).detach()
             out_fea = F.normalize(out_fea, p=2, dim=-1).cpu().numpy()
             cluster_labels = clusterer.fit_predict(out_fea)
@@ -229,6 +232,23 @@ class CLModel(BaseModel):
                                                  f'{data_name}_{self.opt["name"]}.png')
                 pdw_write(metric_data['pred_labels'].numpy(), metric_data['true_labels'].numpy(),
                           self.input_nonorm.squeeze(0).detach().cpu().numpy(), out_fea, save_img_path, save_img)
+
+            if '_P_' in self.opt['network_g']['type']:
+                from sklearn.manifold import TSNE
+                import matplotlib.pyplot as plt
+                out_prototype_num_per_cls = int(self.opt['network_g']['prototype_num'])
+                tsne = TSNE(n_components=2, random_state=42, perplexity=out_prototype_num_per_cls // 2, n_iter=250)
+                out_prototype_all = np.concatenate([v.detach().cpu().numpy() for v in out_prototype.values], axis=0)
+                out_label_all = [k for k in out_prototype.keys() for _ in range(out_prototype_num_per_cls)]
+                prototype_tsne = tsne.fit_transform(out_prototype_all)
+
+                plt.figure(figsize=(8, 6))
+                plt.title('Output T-SNE (Prototype)')
+                plt.scatter(prototype_tsne[:, 0], prototype_tsne[:, 1], c=out_label_all, s=10, marker='^')
+                plt.xlabel('Demension 1')
+                plt.ylabel('Demension 2')
+                plt.savefig(save_img_path.replace('.png', '_prototype_tsne.png'), dpi=300)
+                plt.close()
 
             # tentative for out of GPU memory
             del self.output

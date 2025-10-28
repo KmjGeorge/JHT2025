@@ -353,8 +353,13 @@ def pdw_write(label, label_gt, data, out_feature, save_img_path, save_config):
 
     if save_config['save_featureTSNE']:
 
+        unique_label, counts = np.unique(label_gt, return_counts=True)
+        perplexity = min(counts) // 2
+        if perplexity <= 15:
+            perplexity = 15
+    
         # save T-SNE visualization
-        tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=500)
+        tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity, n_iter=500)
         feature_tsne = tsne.fit_transform(out_feature)
 
         if len(np.unique(label) <= len(color_map_selected)):
