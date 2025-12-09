@@ -377,7 +377,7 @@ class FlowAttention(nn.Module):
 
 
 
-@ARCH_REGISTRY.register()
+# @ARCH_REGISTRY.register()
 class Flowformer(nn.Module):
     """
     modified from https://github.com/thuml/Flowformer
@@ -444,7 +444,7 @@ class Flowformer(nn.Module):
 
 
 
-@ARCH_REGISTRY.register()
+# @ARCH_REGISTRY.register()
 class Flowformer_P(nn.Module):
     """
     modified from https://github.com/thuml/Flowformer
@@ -510,28 +510,32 @@ class Flowformer_P(nn.Module):
 
     def forward(self, x_enc):
         dec_out = self.forecast(x_enc)
-        prototype = self.prototype_projection(self.prototype)
+        prototype = self.prototype_projection(self.prototype).chunk(self.label_num, dim=0)
+        # print(len(prototype), prototype[0].shape)
         prototype_dict = {k: v for k, v in zip([i for i in range(self.label_num)], [prototype[i] for i in range(self.label_num)])}
+
         return dec_out[:, -self.pred_len:, :], prototype_dict  # [B, L, D]
 
 if __name__ == '__main__':
-    model = Flowformer(seq_len=50000,
-                       enc_in=5,
+    model = Flowformer_P(seq_len=5000,
+                       enc_in=4,
                        d_model=256,
-                       c_out=64,
+                       c_out=128,
                        n_heads=8,
                        d_ff=512,
                        activation='relu',
                        dropout=0.1,
                        e_layers=8,
+                       label_num=354,
+                       prototype_num=64,
                        pe_mode='RoPE').cuda()
     # x = torch.randn(8, 100, 3)
     # y = model(x)
     # print(y.shape)
     from torchsummary import summary
 
-    for i in range(1000):
-        x = torch.randn(1, 30000, 5).cuda()
-        y = model(x)
-    # summary(model, input_data=torch.rand(4, 1500, 5))
+    # for i in range(1000):
+    #     x = torch.randn(1, 300, 5).cuda()
+    #     y = model(x)
+    summary(model, input_data=torch.rand(1, 500, 4))
 

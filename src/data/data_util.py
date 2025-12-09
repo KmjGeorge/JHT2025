@@ -218,6 +218,34 @@ class PDWTrain:
         return self.DTOA
 
 
+class PDWTrain_new:
+    def __init__(self, Freqs, PAs, PWs, TOAs, Labels=None, IntraPulse=None):
+
+        self.Freqs = Freqs
+        self.PAs = PAs
+        self.PWs = PWs
+        self.TOAs = TOAs
+        self.Labels = Labels
+        if IntraPulse is not None:
+            self.IntraPulse = IntraPulse
+        self.update_dtoa()
+
+    #  获取数据范围
+    def get_data_range(self):
+        result = {'freq': [self.Freqs.max(), self.Freqs.min()],
+                  'pa': [self.PAs.max(), self.PAs.min()],
+                  'pw': [self.PWs.max(), self.PWs.min()],
+                  'toa': [self.TOAs.max(), self.TOAs.min()],
+                  }
+        return result
+
+    def __len__(self):
+        return len(self.TOAs)
+
+    def update_dtoa(self):
+        self.DTOA = np.pad(np.diff(self.TOAs), (1,0), mode='constant', constant_values=0)
+        return self.DTOA
+
 def read_pdw(path, metric='us'):
     label_map = {'1111': 0,
                  '1112': 1,
@@ -266,6 +294,47 @@ def read_pdw(path, metric='us'):
             pdwtrain = PDWTrain(Freqs, PAs, Labels, Tag_CenterFreqs, Tag_SampleRates, PWs, TOAdots, IntraPulse)
         except:
             pdwtrain = PDWTrain(Freqs, PAs, Labels, Tag_CenterFreqs, Tag_SampleRates, PWs, TOAdots)
+        return pdwtrain
+
+
+def read_pdw_new_recog(path, metric='us', with_label=True):
+    # label_map = {'1111': 0,
+    #              '1112': 1,
+    #              '1121': 2,
+    #              '1131': 3,
+    #              '1132': 4,
+    #              '1141': 5,
+    #              '1151': 6,
+    #              '1311': 7,
+    #              '1421': 8,
+    #              '1422': 9,
+    #              '1451': 10,
+    #              '2111': 11,
+    #              '2151': 12,
+    #              '2211': 13,
+    #              '2421': 14}
+    if with_label:
+        all_files = os.listdir('D:/Datasets/DIL1028/Data')
+        label_map = {k: v for k, v in zip(all_files, [i for i in range(len(all_files))])}
+
+    with h5py.File(path, 'r') as f:
+        Freqs = np.array(f['Freq']).squeeze()
+        PAs = np.array(f['PA']).squeeze()
+        PWs = np.array(f['PW']).squeeze()
+        TOAs = np.array(f['TOA']).squeeze()
+        if with_label:
+            label = os.path.split(path)[-1]
+            Labels = np.repeat(label_map[label], len(Freqs))
+        else:
+            Labels = None
+        try:
+            IntraPulse = np.array(f['data']).squeeze()
+        except:
+            IntraPulse = None
+        if metric == 'us':
+            TOAs /= 1e3
+
+        pdwtrain = PDWTrain_new(Freqs, PAs, PWs, TOAs, Labels, IntraPulse)
         return pdwtrain
 
 
@@ -352,14 +421,8 @@ def pdw_write(label, label_gt, data, out_feature, save_img_path, save_config):
         draw_pdwtrain_with_label(pdwtrain_gt, save_img_path.replace('.png', '_gt.png'))
 
     if save_config['save_featureTSNE']:
-
-        unique_label, counts = np.unique(label_gt, return_counts=True)
-        perplexity = min(counts) // 2
-        if perplexity <= 15:
-            perplexity = 15
-    
         # save T-SNE visualization
-        tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity, n_iter=500)
+        tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=500)
         feature_tsne = tsne.fit_transform(out_feature)
 
         if len(np.unique(label) <= len(color_map_selected)):

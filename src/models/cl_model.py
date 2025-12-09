@@ -140,15 +140,24 @@ class CLModel(BaseModel):
                 l_recon = 0
                 loss_dict['l_Recon'] = l_recon
 
-            sample_milestone = self.opt['train'].get('sample_milestone', None)
+
             if self.cri_infonce:
+                sample_milestone = self.opt['train'].get('sample_milestone', None)
                 if sample_milestone is not None:
                     if current_iter <= sample_milestone:
                         l_cl = self._calculate_contrastive_loss_point_active_sampling()
                     else:
                         l_cl = self._calculate_contrastive_loss()
                 else:
-                    l_cl = self._calculate_contrastive_loss()
+                    if '_P' in self.opt['network_g']['type']:
+                        if 'focal_weight_path' in self.opt['train'].keys():
+                            focal_weight = np.load(self.opt['train']['focal_weight_path'])
+                            l_cl = self._calculate_contrastive_loss_prototype_focal(focal_weight)
+                        else:
+                            l_cl = self._calculate_contrastive_loss_prototype()
+                    else:
+                        l_cl = self._calculate_contrastive_loss()
+
                 l_total += l_cl
                 loss_dict['l_InfoNCE'] = l_cl
 
@@ -208,11 +217,13 @@ class CLModel(BaseModel):
 
             if '_P' in self.opt['network_g']['type']:
                 out_fea, out_prototype = self.output
-
-            out_fea = self.output.squeeze(0).detach()
+            else:
+                out_fea = self.output
+            out_fea = out_fea.squeeze(0).detach()
             out_fea = F.normalize(out_fea, p=2, dim=-1).cpu().numpy()
             cluster_labels = clusterer.fit_predict(out_fea)
             cluster_num = max(cluster_labels) + 1
+
             # 若存在标签为-1的离群点，将其视为一个新类
             if np.where(cluster_labels < 0):
                 cluster_labels[np.where(cluster_labels < 0)] = cluster_num
@@ -233,22 +244,27 @@ class CLModel(BaseModel):
                 pdw_write(metric_data['pred_labels'].numpy(), metric_data['true_labels'].numpy(),
                           self.input_nonorm.squeeze(0).detach().cpu().numpy(), out_fea, save_img_path, save_img)
 
-            if '_P_' in self.opt['network_g']['type']:
-                from sklearn.manifold import TSNE
-                import matplotlib.pyplot as plt
-                out_prototype_num_per_cls = int(self.opt['network_g']['prototype_num'])
-                tsne = TSNE(n_components=2, random_state=42, perplexity=out_prototype_num_per_cls // 2, n_iter=250)
-                out_prototype_all = np.concatenate([v.detach().cpu().numpy() for v in out_prototype.values], axis=0)
-                out_label_all = [k for k in out_prototype.keys() for _ in range(out_prototype_num_per_cls)]
-                prototype_tsne = tsne.fit_transform(out_prototype_all)
+            if '_P' in self.opt['network_g']['type']:
 
-                plt.figure(figsize=(8, 6))
-                plt.title('Output T-SNE (Prototype)')
-                plt.scatter(prototype_tsne[:, 0], prototype_tsne[:, 1], c=out_label_all, s=10, marker='^')
-                plt.xlabel('Demension 1')
-                plt.ylabel('Demension 2')
-                plt.savefig(save_img_path.replace('.png', '_prototype_tsne.png'), dpi=300)
-                plt.close()
+                import os
+
+                save_prototype_tsne_path = osp.join(self.opt['path']['visualization'], f'prototype_tsne_iter{current_iter}.png')
+                if not os.path.exists(save_prototype_tsne_path):
+                    from sklearn.manifold import TSNE
+                    import matplotlib.pyplot as plt
+                    out_prototype_num_per_cls = int(self.opt['network_g']['prototype_num'])
+                    tsne = TSNE(n_components=2, random_state=42, perplexity=32, n_iter=250)
+                    out_prototype_all = np.concatenate([v.detach().cpu().numpy() for v in out_prototype.values], axis=0)
+                    out_label_all = [k for k in out_prototype.keys() for _ in range(out_prototype_num_per_cls)]
+                    prototype_tsne = tsne.fit_transform(out_prototype_all)
+
+                    plt.figure(figsize=(8, 6))
+                    plt.title('Output T-SNE (Prototype)')
+                    plt.scatter(prototype_tsne[:, 0], prototype_tsne[:, 1], c=out_label_all, s=10, marker='^')
+                    plt.xlabel('Demension 1')
+                    plt.ylabel('Demension 2')
+                    plt.savefig(save_prototype_tsne_path.replace('.png', '_prototype_tsne.png'), dpi=300)
+                    plt.close()
 
             # tentative for out of GPU memory
             del self.output
@@ -333,79 +349,6 @@ class CLModel(BaseModel):
         l_cl_batch_avg /= B
 
         return l_cl_batch_avg
-
-    # def _calculate_contrastive_loss_2(self):
-    #     '''
-    #     展平为 (B*N, D) 加快速度
-    #     '''
-    #     B, N, D = self.output.shape
-    #     output = self.output.reshape(B * N, D)
-    #     label = self.label.reshape(B * N)
-    #
-    #     label_unique, counts = torch.unique(label, return_counts=True)  # 所有label种类
-    #     label_cnt = 0
-    #     l_cl_label_avg = 0
-    #     for label_elem, count in zip(label_unique, counts):  # 对每种label，随机挑选出一个样本作为锚点，另一个作为正样本，并把其他label的特征作为负样本
-    #         # 过滤样本数少于2的标签的样本
-    #         if count < 2:
-    #             continue
-    #         label_cnt += 1
-    #
-    #         mask = (label == label_elem)
-    #         feature = output[label == label_elem]  # (N1, D)  N1为该类的脉冲总数
-    #
-    #         shuffle_idx = torch.randperm(feature.shape[0])  # 将该类的样本随机平均切分，一半为锚点，另一半为正样本
-    #         mid = len(shuffle_idx) // 2
-    #         anchor_idx, positive_idx = shuffle_idx[:mid], shuffle_idx[mid:2 * mid]
-    #         anchor = feature[anchor_idx, :]  # (N1 // 2, D)
-    #         positive = feature[positive_idx, :]  # (N1 // 2, D)
-    #
-    #         negative = output[~mask, :]  # (N2, D)  N2为其他类的脉冲总数    此时InfoNCE应为unpaired模式
-    #
-    #         l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
-    #         l_cl_label_avg += l_cl
-    #     l_cl_label_avg /= label_cnt
-    #
-    #     return l_cl_label_avg
-
-    # def _calculate_contrastive_loss_segment(self):
-    #     """
-    #     对于每个类别，构建一个全局平均特征，对比学习在点与平均特征上进行
-    #     """
-    #     B, N, D = self.output.shape
-    #     output = self.output.reshape(B * N, D)
-    #     label = self.label.reshape(B * N)
-    #
-    #     label_unique, counts = torch.unique(label, return_counts=True)  # 所有label种类
-    #     label_cnt = 0
-    #     l_cl_label_avg = 0
-    #
-    #     features_of_label = {}
-    #     features_of_label_mean = {}
-    #     for label_elem, count in zip(label_unique, counts):  # 对每种label，随机挑选出一个样本作为锚点，平均特征作为正样本，并把其他label的平均特征作为负样本
-    #         # 过滤样本数少于2的标签的样本
-    #         if count < 2:
-    #             continue
-    #         label_cnt += 1
-    #         feature = output[label == label_elem]  # (N1, D)  N1为该类的脉冲总数
-    #         features_of_label[label_elem.item()] = feature
-    #         features_of_label_mean[label_elem.item()] = feature.mean(dim=0)
-    #
-    #     for label_elem, count in zip(label_unique, counts):
-    #         if count < 2:
-    #             continue
-    #         feature = features_of_label[label_elem.item()]
-    #         anchor_idx = torch.randperm(feature.shape[0])[0]  # 随机取出一个为锚点
-    #         anchor = feature[anchor_idx, :]  # (1, D)
-    #         positive = features_of_label_mean[label_elem.item()]
-    #
-    #         negative = torch.stack([value for key, value in features_of_label_mean.items() if key != label_elem.item()], dim=0)
-    #
-    #         l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative)
-    #         l_cl_label_avg += l_cl
-    #     l_cl_label_avg /= label_cnt
-    #
-    #     return l_cl_label_avg
 
     def _calculate_contrastive_loss_point_segment(self):
         """
@@ -620,9 +563,43 @@ class CLModel(BaseModel):
 
                 l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_key=negative, negative_mode='unpaired')
 
-                anchor_proto, positive_proto = proto.chunk(2, dim=0)
-                l_cl_proto = self.cri_infonce(query=anchor_proto, positive_key=positive_proto, negative_keys=negative, negative_mode='unpaired')
-                l_cl_label_avg += l_cl + 0.2 * l_cl_proto
+                # anchor_proto, positive_proto = proto.chunk(2, dim=0)
+                # l_cl_proto = self.cri_infonce(query=anchor_proto, positive_key=positive_proto, negative_keys=negative, negative_mode='unpaired')
+                l_cl_label_avg += l_cl
+            l_cl_label_avg = l_cl_label_avg / label_cnt
+            l_cl_batch_avg += l_cl_label_avg
+        l_cl_batch_avg /= B
+
+        return l_cl_batch_avg
+
+    def _calculate_contrastive_loss_prototype_focal(self, focal_map):
+        feature, prototype = self.output
+        # prototype应为一个字典，key为label名，values为原型向量  # (B, D)
+        B, N, D = feature.shape
+        l_cl_batch_avg = 0
+        for output, label in zip(self.output, self.label):
+            label_unique, counts = torch.unique(label, return_counts=True)
+            label_cnt = 0
+            l_cl_label_avg = 0
+
+            for label_elem, count in zip(label_unique, counts):
+                label_cnt +=1
+                feature = output[label == label_elem]
+
+                anchor = feature
+                label_ = int(label_elem.item())
+                proto = prototype[label_]
+
+                indices = torch.randperm(feature.shape[0]) % proto.shape[0]
+                positive = proto[indices]
+
+                negative = torch.cat([v for k, v in prototype.item() if k != label_], dim=0)  # (Nd, D)  Nd = prototype_num * (class_num - 1)
+
+                l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_key=negative, negative_mode='unpaired')
+                # anchor_proto, positive_proto = proto.chunk(2, dim=0)
+                # l_cl_proto = self.cri_infonce(query=anchor_proto, positive_key=positive_proto, negative_keys=negative, negative_mode='unpaired')
+                l_cl_label_avg += l_cl * focal_map[label_]
+
             l_cl_label_avg = l_cl_label_avg / label_cnt
             l_cl_batch_avg += l_cl_label_avg
         l_cl_batch_avg /= B
