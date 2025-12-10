@@ -81,6 +81,51 @@ class ConvLayer(nn.Module):
         x = x.transpose(1, 2)
         return x
 
+class ChannelAttention1D(nn.Module):
+    """
+    Args:
+        channel (int): 输入通道数 C
+        b (int, optional): 自适应卷积核大小公式中的超参数b，默认为1。
+        gamma (int, optional): 自适应卷积核大小公式中的超参数gamma，默认为2。
+    """
+    def __init__(self, c_in, b=1, gamma=2):
+        super(ChannelAttention1D, self).__init__()
+        # 自适应计算一维卷积的核大小k：k = |(log2(C) + b) / gamma|，并确保为奇数
+        kernel_size = int(abs((math.log(c_in, 2) + b) / gamma))
+        self.conv = nn.Conv1d(in_channels=c_in,
+                    out_channels=c_in,
+                    kernel_size=3,
+                    padding=2,
+                    padding_mode='circular')
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        padding = kernel_size // 2
+
+        self.avg_pool = nn.AdaptiveAvgPool1d(1)
+        # 使用一维卷积替代全连接层，输入和输出通道数均为1，在通道维度上进行卷积
+        self.conv = nn.Conv1d(1, 1, kernel_size=kernel_size, padding=padding, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): 输入张量 [B, C, L]
+        Returns:
+            torch.Tensor: 加权后的张量 [B, C, L]
+        """
+        b, c, l = x.size()
+        x = self.conv(x)
+        # Squeeze: 全局平均池化 [B, C, L] -> [B, C, 1]
+        y = self.avg_pool(x)
+        # 调整维度：将通道维度C视为"序列长度"，以便Conv1d处理。变换为 [B, 1, C]
+        y = y.transpose(1, 2)  # 现在形状是 [B, 1, C]
+        # 一维卷积：在通道维度C上进行卷积，计算每个通道及其相邻通道的交互
+        y = self.conv(y)  # 形状仍为 [B, 1, C]
+        y = self.sigmoid(y)
+        # 调整维度回 [B, C, 1]
+        y = y.transpose(1, 2)  # 形状 [B, C, 1]
+        # Scale: 与输入相乘
+        return x * y
 
 class EncoderLayer(nn.Module):
     def __init__(self, attention, d_model, d_ff=None, dropout=0.1, activation="relu"):
@@ -377,7 +422,7 @@ class FlowAttention(nn.Module):
 
 
 
-@ARCH_REGISTRY.register()
+# @ARCH_REGISTRY.register()
 class Flowformer(nn.Module):
     """
     modified from https://github.com/thuml/Flowformer
@@ -407,8 +452,7 @@ class Flowformer(nn.Module):
 
         # Encoder
         self.encoder = Encoder(
-            [
-                EncoderLayer(
+            attn_layers=[EncoderLayer(
                     AttentionLayer(
                         FlowAttention(attention_dropout=dropout), d_model, n_heads),
                     d_model,
@@ -417,6 +461,9 @@ class Flowformer(nn.Module):
                     activation=activation
                 ) for l in range(e_layers)
             ],
+            conv_layers=[ConvLayer()
+                for l in range(e_layers)
+            ]
             norm_layer=torch.nn.LayerNorm(d_model)
         )
 
