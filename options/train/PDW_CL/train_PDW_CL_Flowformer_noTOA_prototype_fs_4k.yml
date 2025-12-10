@@ -1,0 +1,121 @@
+# general settings
+name: 033_DIL_Flowformer_CL_RoPE_2to10_fs4k_proto64_T0.05_ema_370kc_focal_extdata_proloss1
+model_type: CLModel
+num_gpu: 1
+manual_seed: 2
+
+# dataset and data loader settings
+datasets:
+  train:
+    name: JHT2025FS_mix2to10
+    type: DeinterleavingDataset
+    dataroot: D:/Datasets/train4k
+    filename_tmpl: '{}'
+    io_backend:
+      type: disk
+
+    # data loader
+    num_worker_per_gpu: 4
+    batch_size_per_gpu: 3
+    dataset_enlarge_ratio: 50
+    prefetch_mode: cuda
+    pin_memory: true
+
+    use_flip: true
+
+  val:
+    name: JHT2025FS_mix2to10
+    type: DeinterleavingDataset
+    dataroot: D:/Datasets/val4k
+    io_backend:
+      type: disk
+
+# network structures
+network_g:
+  type: Flowformer_P
+  seq_len: 5000
+  enc_in: 4
+  d_model: 256
+  c_out: 128
+  n_heads: 8
+  d_ff: 512
+  activation: relu
+  dropout: 0.1
+  e_layers: 8
+  pe_mode: RoPE
+  label_num: 354
+  prototype_num: 64
+
+#network_g:
+#  type: SimpleMLP
+#  seq_len: 3000
+#  c_in: 5
+#  c_out: 32
+#  d_model: 256
+
+# path
+path:
+  pretrain_network_g: ~
+  # param_key_g: params_ema
+  strict_load_g: true
+  resume_state:  ~
+
+# training settings
+train:
+  ema_decay: 0.999
+  optim_g:
+    type: Adam
+    lr: !!float 2e-4
+    weight_decay: !!float 1e-7
+    betas: [0.9, 0.99]
+
+  scheduler:
+    type: CosineAnnealingRestartLR
+    periods: [300000, 300000, 200000, 200000]
+    restart_weights: [1, 0.5, 0.25, 0.25]
+    eta_min: !!float 5e-7
+#    type: MultiStepLR
+#    milestones: [150000]
+#    gamma: 0.5
+
+  total_iter: 600000
+  warmup_iter: -1  # no warm up
+
+  # losses
+  infonce_opt:
+    type: InfoNCELoss
+    loss_weight: 1.0
+    temperature: 0.05
+    reduction: mean
+  focal_weights_path: ../scripts/save_focal_weights4k.npy
+
+### validation settings
+val:
+  val_freq: !!float 1e4
+  save_img:
+    enable: true
+    save_label: true
+    save_pdwimg: false
+    save_featureTSNE: true
+
+  metrics:
+    ac: # metric name, can be arbitrary
+      type: calculate_ac
+    nmi:
+      type: calculate_nmi
+    ari:
+      type: calculate_ari
+
+# logging settings
+logger:
+  print_freq: 100
+  save_checkpoint_freq: !!float 5e3
+  use_tb_logger: true
+  wandb:
+    project: ~
+    resume_id: ~
+
+# dist training settings
+dist_params:
+  backend: nccl
+  port: 29500
