@@ -253,8 +253,8 @@ class CLModel(BaseModel):
                     from sklearn.manifold import TSNE
                     import matplotlib.pyplot as plt
                     out_prototype_num_per_cls = int(self.opt['network_g']['prototype_num'])
-                    tsne = TSNE(n_components=2, random_state=42, perplexity=32, n_iter=250)
-                    out_prototype_all = np.concatenate([v.detach().cpu().numpy() for v in out_prototype.values], axis=0)
+                    tsne = TSNE(n_components=2, random_state=42, perplexity=10, n_iter=250)
+                    out_prototype_all = np.concatenate([v.detach().cpu().numpy() for v in out_prototype.values()], axis=0)
                     out_label_all = [k for k in out_prototype.keys() for _ in range(out_prototype_num_per_cls)]
                     prototype_tsne = tsne.fit_transform(out_prototype_all)
 
@@ -543,25 +543,26 @@ class CLModel(BaseModel):
         # prototype应为一个字典，key为label名，values为原型向量  # (B, D)
         B, N, D = feature.shape
         l_cl_batch_avg = 0
-        for output, label in zip(self.output, self.label):
+        for output, label in zip(feature, self.label):
             label_unique, counts = torch.unique(label, return_counts=True)
             label_cnt = 0
             l_cl_label_avg = 0
 
             for label_elem, count in zip(label_unique, counts):
-                label_cnt +=1
-                feature = output[label == label_elem]
+                label_cnt += 1
+                feature_of_label = output[label == label_elem, :]
 
-                anchor = feature
+                anchor = feature_of_label
                 label_ = int(label_elem.item())
                 proto = prototype[label_]
 
-                indices = torch.randperm(feature.shape[0]) % proto.shape[0]
+                indices = torch.randperm(feature_of_label.shape[0]) % proto.shape[0]
                 positive = proto[indices]
 
-                negative = torch.cat([v for k, v in prototype.item() if k != label_], dim=0)  # (Nd, D)  Nd = prototype_num * (class_num - 1)
+                negative = torch.cat([v for k, v in prototype.items() if k != label_], dim=0)  # (Nd, D)  Nd = prototype_num * (class_num - 1)
 
-                l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_key=negative, negative_mode='unpaired')
+                # print(anchor.shape, positive.shape, negative.shape)
+                l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative, negative_mode='unpaired')
 
                 # anchor_proto, positive_proto = proto.chunk(2, dim=0)
                 # l_cl_proto = self.cri_infonce(query=anchor_proto, positive_key=positive_proto, negative_keys=negative, negative_mode='unpaired')
@@ -572,6 +573,8 @@ class CLModel(BaseModel):
 
         return l_cl_batch_avg
 
+
+# TODO
     def _calculate_contrastive_loss_prototype_focal(self, focal_map):
         feature, prototype = self.output
         # prototype应为一个字典，key为label名，values为原型向量  # (B, D)
@@ -593,9 +596,9 @@ class CLModel(BaseModel):
                 indices = torch.randperm(feature.shape[0]) % proto.shape[0]
                 positive = proto[indices]
 
-                negative = torch.cat([v for k, v in prototype.item() if k != label_], dim=0)  # (Nd, D)  Nd = prototype_num * (class_num - 1)
+                negative = torch.cat([v for k, v in prototype.items() if k != label_], dim=0)  # (Nd, D)  Nd = prototype_num * (class_num - 1)
 
-                l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_key=negative, negative_mode='unpaired')
+                l_cl = self.cri_infonce(query=anchor, positive_key=positive, negative_keys=negative, negative_mode='unpaired')
                 # anchor_proto, positive_proto = proto.chunk(2, dim=0)
                 # l_cl_proto = self.cri_infonce(query=anchor_proto, positive_key=positive_proto, negative_keys=negative, negative_mode='unpaired')
                 l_cl_label_avg += l_cl * focal_map[label_]

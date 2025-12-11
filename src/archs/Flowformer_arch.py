@@ -422,7 +422,7 @@ class FlowAttention(nn.Module):
 
 
 
-# @ARCH_REGISTRY.register()
+@ARCH_REGISTRY.register()
 class Flowformer(nn.Module):
     """
     modified from https://github.com/thuml/Flowformer
@@ -461,10 +461,7 @@ class Flowformer(nn.Module):
                     activation=activation
                 ) for l in range(e_layers)
             ],
-            conv_layers=[ConvLayer()
-                for l in range(e_layers)
-            ]
-            norm_layer=torch.nn.LayerNorm(d_model)
+            norm_layer=torch.nn.LayerNorm(d_model),
         )
 
         # decoder
@@ -491,7 +488,7 @@ class Flowformer(nn.Module):
 
 
 
-# @ARCH_REGISTRY.register()
+@ARCH_REGISTRY.register()
 class Flowformer_P(nn.Module):
     """
     modified from https://github.com/thuml/Flowformer
@@ -560,7 +557,6 @@ class Flowformer_P(nn.Module):
         prototype = self.prototype_projection(self.prototype).chunk(self.label_num, dim=0)
         # print(len(prototype), prototype[0].shape)
         prototype_dict = {k: v for k, v in zip([i for i in range(self.label_num)], [prototype[i] for i in range(self.label_num)])}
-
         return dec_out[:, -self.pred_len:, :], prototype_dict  # [B, L, D]
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 # general settings
-name: 028_Deinterleaving_Flowformer_CL_RoPE_2to10_1k_protype64_noTOA_LossImpl3_t0.05_as_wsl
+name: 060_Flowformer_1016_CL_RoPE_2to10_d128c64f512_1k_proto64_b4_t0.1
 model_type: CLModel
 num_gpu: 1
 manual_seed: 0
@@ -9,7 +9,7 @@ datasets:
   train:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: /mnt/d/Datasets/JHT2025Pre/train1016
+    dataroot: D:/Datasets/JHT2025Pre/train1016
     filename_tmpl: '{}'
     io_backend:
       type: disk
@@ -17,16 +17,15 @@ datasets:
     # data loader
     num_worker_per_gpu: 2
     batch_size_per_gpu: 4
-    dataset_enlarge_ratio: 100
+    dataset_enlarge_ratio: 30
     prefetch_mode: cuda
     pin_memory: true
-
-    use_flip: true
+    use_flip: false
 
   val:
     name: JHT2025Pre_mix2to10
     type: DeinterleavingDataset
-    dataroot: /mnt/d/Datasets/JHT2025Pre/val1016
+    dataroot: D:/Datasets/JHT2025Pre/val1016
     io_backend:
       type: disk
 
@@ -36,7 +35,7 @@ network_g:
   seq_len: 1000
   enc_in: 4
   d_model: 128
-  c_out: 32
+  c_out: 64
   n_heads: 8
   d_ff: 512
   activation: relu
@@ -61,10 +60,11 @@ path:
 
 # training settings
 train:
+  ema_decay: 0.999
   optim_g:
     type: Adam
-    lr: !!float 1e-4
-    weight_decay: !!float 1e-5
+    lr: !!float 2e-4
+    weight_decay: !!float 1e-7
     betas: [0.9, 0.99]
 
   scheduler:
@@ -73,10 +73,10 @@ train:
 #    restart_weights: [1, 0.5, 0.5, 0.5]
 #    eta_min: !!float 1e-6
     type: MultiStepLR
-    milestones: [150000]
+    milestones: [100000, 200000, 300000]
     gamma: 0.5
 
-  sample_milestone: 150000
+  # sample_milestone: 150000
 
   total_iter: 300000
   warmup_iter: -1  # no warm up
@@ -85,12 +85,12 @@ train:
   infonce_opt:
     type: InfoNCELoss
     loss_weight: 1.0
-    temperature: 0.05
+    temperature: 0.1
     reduction: mean
 
 ### validation settings
 val:
-  val_freq: !!float 1e4
+  val_freq: !!float 2e4
   save_img:
     enable: true
     save_label: true
@@ -108,7 +108,7 @@ val:
 # logging settings
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 5e3
+  save_checkpoint_freq: !!float 2e4
   use_tb_logger: true
   wandb:
     project: ~

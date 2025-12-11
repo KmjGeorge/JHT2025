@@ -34,6 +34,7 @@ class DeinterleavingDataset(data.Dataset):
         if self.use_flip:
             if np.random.rand() < 0.5:
                 data = data.flip([0])
+
         # normalization internally each pdw train
         # for toa rescale to 0~1; for pw, pa, freq apply z-score
         pdws_nonorm = data[:, :-1]
@@ -50,7 +51,6 @@ class DeinterleavingDataset(data.Dataset):
         # print(freqs.shape, pws.shape, pas.shape, toas.shape, dtoa.shape)
         pdws = torch.stack([freqs, pws, pas, dtoa], dim=1).float()  # (N, 5)    (N, 4) freq, pw ,pa, dtoa  删除toa，只使用归一化的dtoa
         labels = data[:, -1]  # (N, )
-
 
         return {'pdws': pdws, 'pdws_nonorm': pdws_nonorm, 'labels': labels, 'data_path': data_path}
 
