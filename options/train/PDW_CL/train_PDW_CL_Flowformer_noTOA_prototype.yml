@@ -1,5 +1,5 @@
 # general settings
-name: 060_Flowformer_1016_CL_RoPE_2to10_d128c64f512_1k_proto64_b4_t0.1
+name: 060_Flowformer_1016_CL_RoPE_2to10_d128c64f512ca_1k_proto64_b4_t0.05
 model_type: CLModel
 num_gpu: 1
 manual_seed: 0
@@ -56,7 +56,7 @@ network_g:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state:  ~
+  resume_state:  F:\github\JHT2025\experiments\060_Flowformer_1016_CL_RoPE_2to10_d128c64f512ca_1k_proto64_b4_t0.05\training_states\60000.state
 
 # training settings
 train:
@@ -85,7 +85,7 @@ train:
   infonce_opt:
     type: InfoNCELoss
     loss_weight: 1.0
-    temperature: 0.1
+    temperature: 0.05
     reduction: mean
 
 ### validation settings

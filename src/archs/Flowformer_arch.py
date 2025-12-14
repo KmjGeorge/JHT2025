@@ -92,11 +92,11 @@ class ChannelAttention1D(nn.Module):
         super(ChannelAttention1D, self).__init__()
         # 自适应计算一维卷积的核大小k：k = |(log2(C) + b) / gamma|，并确保为奇数
         kernel_size = int(abs((math.log(c_in, 2) + b) / gamma))
-        self.conv = nn.Conv1d(in_channels=c_in,
-                    out_channels=c_in,
-                    kernel_size=3,
-                    padding=2,
-                    padding_mode='circular')
+        # self.conv = nn.Conv1d(in_channels=c_in,
+        #             out_channels=c_in,
+        #             kernel_size=3,
+        #             padding=2,
+        #             padding_mode='circular')
         if kernel_size % 2 == 0:
             kernel_size += 1
         padding = kernel_size // 2
@@ -109,22 +109,13 @@ class ChannelAttention1D(nn.Module):
     def forward(self, x):
         """
         Args:
-            x (torch.Tensor): 输入张量 [B, C, L]
+            x (torch.Tensor): 输入张量 [B, L, C]
         Returns:
-            torch.Tensor: 加权后的张量 [B, C, L]
+            torch.Tensor: 加权后的张量 [B, L, C]
         """
-        b, c, l = x.size()
-        x = self.conv(x)
-        # Squeeze: 全局平均池化 [B, C, L] -> [B, C, 1]
-        y = self.avg_pool(x)
-        # 调整维度：将通道维度C视为"序列长度"，以便Conv1d处理。变换为 [B, 1, C]
-        y = y.transpose(1, 2)  # 现在形状是 [B, 1, C]
-        # 一维卷积：在通道维度C上进行卷积，计算每个通道及其相邻通道的交互
-        y = self.conv(y)  # 形状仍为 [B, 1, C]
+        y = self.avg_pool(x.transpose(1, 2)).transpose(1, 2)   # (B, 1, C)
+        y = self.conv(y)
         y = self.sigmoid(y)
-        # 调整维度回 [B, C, 1]
-        y = y.transpose(1, 2)  # 形状 [B, C, 1]
-        # Scale: 与输入相乘
         return x * y
 
 class EncoderLayer(nn.Module):
@@ -452,7 +443,8 @@ class Flowformer(nn.Module):
 
         # Encoder
         self.encoder = Encoder(
-            attn_layers=[EncoderLayer(
+            [
+                EncoderLayer(
                     AttentionLayer(
                         FlowAttention(attention_dropout=dropout), d_model, n_heads),
                     d_model,
@@ -461,7 +453,10 @@ class Flowformer(nn.Module):
                     activation=activation
                 ) for l in range(e_layers)
             ],
-            norm_layer=torch.nn.LayerNorm(d_model),
+            [
+                ChannelAttention1D(c_in=d_model) for l in range(e_layers)
+            ],
+            norm_layer=torch.nn.LayerNorm(d_model)
         )
 
         # decoder
@@ -532,6 +527,9 @@ class Flowformer_P(nn.Module):
                     activation=activation
                 ) for l in range(e_layers)
             ],
+            [
+                ChannelAttention1D(c_in=d_model) for l in range(e_layers)
+            ],
             norm_layer=torch.nn.LayerNorm(d_model)
         )
 
@@ -560,16 +558,16 @@ class Flowformer_P(nn.Module):
         return dec_out[:, -self.pred_len:, :], prototype_dict  # [B, L, D]
 
 if __name__ == '__main__':
-    model = Flowformer_P(seq_len=5000,
+    model = Flowformer_P(seq_len=1000,
                        enc_in=4,
-                       d_model=256,
-                       c_out=128,
+                       d_model=128,
+                       c_out=64,
                        n_heads=8,
                        d_ff=512,
                        activation='relu',
                        dropout=0.1,
                        e_layers=8,
-                       label_num=354,
+                       label_num=15,
                        prototype_num=64,
                        pe_mode='RoPE').cuda()
     # x = torch.randn(8, 100, 3)
@@ -580,5 +578,5 @@ if __name__ == '__main__':
     # for i in range(1000):
     #     x = torch.randn(1, 300, 5).cuda()
     #     y = model(x)
-    summary(model, input_data=torch.rand(1, 500, 4))
+    summary(model, input_data=torch.rand(3, 1000, 4))
 
